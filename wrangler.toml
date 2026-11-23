@@ -1,0 +1,18 @@
+# Flota SAREGO como Worker de Cloudflare con assets estáticos (la PWA de
+# web/dist), igual que la app retail (crm.distribuidorasarego.com) y la
+# B2B (b2b.distribuidorasarego.com). El build de Vite corre antes del
+# deploy (ver .github/workflows/deploy.yml).
+name = "app-flota-sarego"
+compatibility_date = "2026-01-01"
+workers_dev = true
+
+[assets]
+directory = "./web/dist"
+# Rutas de cliente (/e/:empresa/activos/:id…) las resuelve la app
+not_found_handling = "single-page-application"
+
+# Crea el DNS y el certificado del subdominio en la zona
+# distribuidorasarego.com (misma cuenta de Cloudflare)
+[[routes]]
+pattern = "flota.distribuidorasarego.com"
+custom_domain = true
