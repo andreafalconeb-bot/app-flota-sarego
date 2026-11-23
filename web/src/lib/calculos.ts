@@ -42,9 +42,15 @@ export type Funcion =
   | 'costo_por_hora'
   | 'intervalo_sugerido'
   | 'informe_aditivo'
+  | 'alarmas'
 
-/** Funciones extendidas: solo en la versión pago (Andrea, formulario 2). */
-const SOLO_PAGO: Funcion[] = ['sin_conexion', 'combustible', 'costo_por_hora', 'intervalo_sugerido', 'informe_aditivo']
+/**
+ * Funciones extendidas: solo en la versión pago (Andrea, formulario 2).
+ * Alarmas (cambios de aceite vencidos o próximos y neumáticos con
+ * alerta): solo pago (Andrea, 23/nov/2026); en la gratis el cliente ve
+ * los datos y lo verifica a mano.
+ */
+const SOLO_PAGO: Funcion[] = ['sin_conexion', 'combustible', 'costo_por_hora', 'intervalo_sugerido', 'informe_aditivo', 'alarmas']
 
 export function disponible(plan: Plan, f: Funcion): boolean {
   return plan === 'pago' || !SOLO_PAGO.includes(f)

@@ -6,7 +6,7 @@ import { dinero, fecha, fechaHora, textoRestante } from '../lib/formato'
 import { estadoPresion, estadoProfundidad, gastoPorCuenta, proximoCambio, type ProximoCambio } from '../lib/calculos'
 import { nombrePosicion } from '../lib/ejes'
 import { ultimasMediciones } from '../components/neumaticos'
-import { Metrica, Pill, Vacio } from '../components/ui'
+import { Metrica, Pill, SoloPago, Vacio } from '../components/ui'
 import type { Activo, Compartimiento } from '../lib/tipos'
 
 export default function Resumen() {
@@ -55,6 +55,8 @@ export default function Resumen() {
   }, [datos])
 
   const vencidos = servicios.filter((s) => s.p.estado === 'vencido').length
+  // Alarmas solo en la versión pago (Andrea, 23/nov/2026)
+  const alarmas = e.tiene('alarmas')
 
   return (
     <div className="pila" style={{ gap: 16 }}>
@@ -71,9 +73,13 @@ export default function Resumen() {
 
       <div className="grid grid-4">
         <Metrica valor={activos.length} etiqueta="Activos" />
-        <Metrica valor={vencidos} etiqueta="Cambios de aceite vencidos" tono={vencidos ? 'critico' : undefined} />
-        <Metrica valor={servicios.length - vencidos} etiqueta="Cambios próximos" tono={servicios.length - vencidos ? 'alerta' : undefined} />
-        <Metrica valor={llantas.length} etiqueta="Neumáticos con alerta" tono={llantas.some((l) => l.critico) ? 'critico' : llantas.length ? 'alerta' : undefined} />
+        {alarmas && (
+          <>
+            <Metrica valor={vencidos} etiqueta="Cambios de aceite vencidos" tono={vencidos ? 'critico' : undefined} />
+            <Metrica valor={servicios.length - vencidos} etiqueta="Cambios próximos" tono={servicios.length - vencidos ? 'alerta' : undefined} />
+            <Metrica valor={llantas.length} etiqueta="Neumáticos con alerta" tono={llantas.some((l) => l.critico) ? 'critico' : llantas.length ? 'alerta' : undefined} />
+          </>
+        )}
         {!e.reportesBloqueados && <Metrica valor={dinero(gastoMes)} etiqueta="Gasto del mes (servicios, facturas y combustible)" />}
       </div>
 
@@ -105,7 +111,11 @@ export default function Resumen() {
         </div>
       )}
 
-      <div className="grid grid-2">
+      {!alarmas && activos.length > 0 && (
+        <SoloPago que="El aviso automático de cambios de aceite vencidos o próximos y de neumáticos con alerta" />
+      )}
+
+      {alarmas && <div className="grid grid-2">
         <section className="tarjeta pila">
           <h2>Cambios de aceite</h2>
           {servicios.length === 0 ? (
@@ -151,7 +161,7 @@ export default function Resumen() {
             </table>
           )}
         </section>
-      </div>
+      </div>}
 
       {activos.length > 0 && (
         <section className="tarjeta pila">
