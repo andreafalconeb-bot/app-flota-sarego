@@ -158,7 +158,7 @@ export interface Costo extends Base {
   registrado_por?: string | null
 }
 
-export type EstadoNeumatico = 'por_recibir' | 'inventario' | 'montado' | 'reparacion' | 'desecho'
+export type EstadoNeumatico = 'por_recibir' | 'inventario' | 'montado' | 'reparacion' | 'renovacion' | 'desecho'
 
 /** Factura de neumáticos que SAREGO le vende al cliente (migración 0129). */
 export interface Factura extends Base {
@@ -182,6 +182,7 @@ export interface Neumatico extends Base {
   articulo_codigo?: string | null
   /** Veces que se le renovó la banda (0 = original); el serial de la carcasa no cambia */
   renovaciones?: number
+  razon_desecho?: string | null
   marca: string | null
   modelo: string | null
   medida: string | null
@@ -201,7 +202,8 @@ export interface Neumatico extends Base {
 
 export interface Movimiento extends Base {
   neumatico_id: string
-  tipo: 'montaje' | 'desmontaje' | 'rotacion' | 'reparacion' | 'desecho'
+  tipo: 'montaje' | 'desmontaje' | 'rotacion' | 'reparacion' | 'renovacion' | 'desecho'
+  razon_desecho?: string | null
   activo_id: string | null
   posicion: string | null
   posicion_anterior: string | null

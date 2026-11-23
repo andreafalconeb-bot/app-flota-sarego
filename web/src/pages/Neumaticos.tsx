@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useEmpresa } from '../lib/empresa'
-import { ESTADOS_NEUMATICO, etiqueta } from '../lib/catalogos'
+import { ESTADOS_NEUMATICO, RAZONES_DESECHO, etiqueta } from '../lib/catalogos'
 import { dinero, fecha, serialNeumatico } from '../lib/formato'
 import { nombrePosicion } from '../lib/ejes'
 import { estadoProfundidad } from '../lib/calculos'
@@ -36,7 +36,7 @@ export default function Neumaticos() {
         <div>
           <h1>Neumáticos</h1>
           <div className="sec chico">
-            {cuenta('montado')} montados · {cuenta('inventario')} en inventario · {cuenta('reparacion')} en reparación
+            {cuenta('montado')} montados · {cuenta('inventario')} en inventario · {cuenta('reparacion')} en reparación{cuenta('renovacion') > 0 && ` · ${cuenta('renovacion')} en renovación`}
             {cuenta('por_recibir') > 0 && ` · ${cuenta('por_recibir')} facturados por recibir`}
           </div>
         </div>
@@ -79,6 +79,7 @@ export default function Neumaticos() {
                       ) : (
                         <>
                           {n.estado === 'por_recibir' ? <Pill tono="alerta">{etiqueta(ESTADOS_NEUMATICO, n.estado)}</Pill> : etiqueta(ESTADOS_NEUMATICO, n.estado)}
+                          {n.estado === 'desecho' && n.razon_desecho && <div className="sec chico">{etiqueta(RAZONES_DESECHO, n.razon_desecho)}</div>}
                           {n.estado === 'inventario' && (
                             <div>
                               {clase(n.id) === 'nuevo' ? <Pill tono="ok">Nuevo</Pill> : clase(n.id) === 'renovado' ? <Pill>Renovado ×{n.renovaciones}</Pill> : <Pill>Usado</Pill>}
