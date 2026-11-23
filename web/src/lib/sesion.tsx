@@ -9,9 +9,9 @@ export interface Yo {
   email: string
   role: string
   debeCambiarClave: boolean
-  /** Personal de SAREGO (usuario B2B interno): ve todas las empresas */
+  /** Personal de SAREGO (B2B interno o vendedor de la retail): ve las empresas asignadas (0129) */
   esSarego: boolean
-  /** Gerente u oficina B2B: cambia planes y límites */
+  /** Administrador, gerente u oficina B2B: ve todas las empresas, asigna y cambia planes y límites */
   esGestion: boolean
   membresias: (Membresia & { empresa_nombre: string })[]
   terminosVigentes: number

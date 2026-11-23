@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, proximoCambio, tramosConsumo } from './calculos'
+import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
 import { aplicar } from './datos'
 import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type Servicio } from './tipos'
 
@@ -173,5 +173,29 @@ describe('aplicar', () => {
     expect(d.activos).toEqual([{ id: 'a1', codigo: 'U-01', placa: 'A1B' }])
     d = aplicar(d, { coleccion: 'activos', op: 'delete', id: 'a1' })
     expect(d.activos).toHaveLength(0)
+  })
+})
+
+describe('marcasParaLote', () => {
+  it('en serie si termina en número, respetando los ceros', () => {
+    expect(marcasParaLote('tg001', 3)).toEqual(['TG001', 'TG002', 'TG003'])
+    expect(marcasParaLote('A-98', 3)).toEqual(['A-98', 'A-99', 'A-100'])
+  })
+  it('la misma si no termina en número, y vacía si no hay marca', () => {
+    expect(marcasParaLote('TGX', 2)).toEqual(['TGX', 'TGX'])
+    expect(marcasParaLote(' ', 3)).toEqual([null, null, null])
+    expect(marcasParaLote('TG010', 1)).toEqual(['TG010'])
+  })
+})
+
+describe('datosCaucho', () => {
+  it('saca medida, modelo y marca del nombre del artículo', () => {
+    expect(datosCaucho({ nombre: '265/65R17 112T FR GRABBER AT GENERAL TIRE', categoria: 'GENERAL TIRE' }))
+      .toEqual({ marca: 'GENERAL TIRE', medida: '265/65R17', modelo: '112T FR GRABBER AT' })
+    expect(datosCaucho({ nombre: '275/70R22.5  PR16 HS205 (DIREC) TERRAKING RIN/Otros: 22.5', categoria: 'VARIAS MARCAS' }))
+      .toEqual({ marca: null, medida: '275/70R22.5', modelo: 'PR16 HS205 (DIREC) TERRAKING' })
+    expect(datosCaucho({ nombre: '7.50-16 10L CONVENCIONAL DIR', categoria: 'VARIAS MARCAS' }).medida).toBe('7.50-16')
+    expect(datosCaucho({ nombre: 'LT315/70R17 121/118R LRD FR GRABBER X3 GENERAL TIRE', categoria: 'GENERAL TIRE' }).medida).toBe('LT315/70R17')
+    expect(datosCaucho({ nombre: '31X10.50R15LT 109R DESTINATION A/T FIRESTONE', categoria: 'FIRESTONE' }).medida).toBe('31X10.50R15LT')
   })
 })
