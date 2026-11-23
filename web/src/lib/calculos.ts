@@ -439,6 +439,31 @@ export function resumenInventario(
     })
 }
 
+/**
+ * Profundidad máxima posible de un neumático (Andrea, 23/nov/2026: "la
+ * profundidad nunca puede ser mayor a la del nuevo"): la de compra o, si
+ * se renovó la banda, la de la última banda renovada.
+ */
+export function profundidadMaxima(
+  n: { id: string; profundidad_inicial_mm: number | null; renovaciones?: number | null },
+  movimientos: { neumatico_id: string; tipo: string; fecha: string; profundidad_mm: number | null; motivo?: string | null }[],
+): number | null {
+  if ((n.renovaciones ?? 0) > 0) {
+    const r = movimientos
+      .filter((m) => m.neumatico_id === n.id && m.profundidad_mm != null && /banda renovada/i.test(m.motivo ?? ''))
+      .sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
+    if (r) return r.profundidad_mm
+  }
+  return n.profundidad_inicial_mm
+}
+
+/** Texto de error si alguna profundidad pasa la máxima, o null. */
+export function errorProfundidad(valores: (number | null)[], maxima: number | null): string | null {
+  if (maxima == null) return null
+  const mal = valores.filter((v): v is number => v != null && v > maxima)
+  return mal.length ? `No puede pasar de ${maxima} mm (profundidad de nuevo); anotaste ${mal.join(', ')} mm.` : null
+}
+
 export function minimo(valores: (number | null | undefined)[]): number | null {
   const v = valores.filter((x): x is number => x != null && !isNaN(x))
   return v.length ? Math.min(...v) : null
