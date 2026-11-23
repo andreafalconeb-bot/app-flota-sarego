@@ -100,9 +100,28 @@ function BuscarCaucho({ onElegir }: { onElegir: (a: Articulo) => void }) {
   )
 }
 
+interface LineaErp {
+  numero: string
+  fecha: string
+  cliente: string
+  codigo_cliente: string | null
+  coincide_cliente: boolean | null
+  articulo_codigo: string | null
+  articulo_nombre: string | null
+  categoria: string | null
+  linea: string | null
+  sublinea: string | null
+  unidades: number
+  valor_neto: number | null
+}
+
 /** Carga de una factura de SAREGO con sus neumáticos (solo personal de SAREGO). */
 export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
-  const { datos, guardar } = useEmpresa()
+  const { datos, guardar, empresa } = useEmpresa()
+  // Importar del ERP (Andrea: "debe buscar en el ERP y traerme los ítems")
+  const [buscar, setBuscar] = useState('')
+  const [buscando, setBuscando] = useState(false)
+  const [origen, setOrigen] = useState<{ cliente: string; coincide: boolean | null; ignorados: number } | null>(null)
   const [numero, setNumero] = useState('')
   const [dia, setDia] = useState(hoyISO())
   const [notas, setNotas] = useState('')
@@ -113,6 +132,48 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
   const cambiar = (clave: number, cambio: Partial<Linea>) => setLineas((ls) => ls.map((l) => (l.clave === clave ? { ...l, ...cambio } : l)))
   const unidades = lineas.reduce((t, l) => t + Math.max(0, Math.floor(num(l.cantidad) ?? 0)), 0)
   const total = lineas.reduce((t, l) => t + Math.max(0, Math.floor(num(l.cantidad) ?? 0)) * (num(l.costo) ?? 0), 0)
+
+  const importar = async () => {
+    setError(null)
+    setOrigen(null)
+    const q = buscar.trim()
+    if (!q) return setError('Escribe el número de factura del ERP.')
+    setBuscando(true)
+    try {
+      const { data, error: e } = await supabase.rpc('flota_factura_erp', { p_empresa: empresa!.id, p_numero: q })
+      if (e) throw new Error(e.message)
+      const filas = (data ?? []) as LineaErp[]
+      if (!filas.length) {
+        return setError(`No encontré la factura ${q} en el ERP. Las facturas llegan con la sincronización del ERP; si es de hoy, puede que todavía no esté.`)
+      }
+      const cauchos = filas.filter((f) => f.linea === 'CAUCHOS')
+      setNumero(filas[0].numero)
+      setDia(filas[0].fecha)
+      setOrigen({ cliente: filas[0].cliente, coincide: filas[0].coincide_cliente, ignorados: filas.length - cauchos.length })
+      if (!cauchos.length) return setError('Esa factura no tiene cauchos.')
+      setLineas(
+        cauchos.map((f) => {
+          const d = datosCaucho({ nombre: f.articulo_nombre ?? '', categoria: f.categoria })
+          const unidades = Math.round(Number(f.unidades))
+          const valor = Number(f.valor_neto ?? 0)
+          return {
+            ...lineaVacia(),
+            articulo_codigo: f.articulo_codigo ?? '',
+            descripcion: f.articulo_nombre ?? '',
+            marca: d.marca ?? '',
+            medida: d.medida ?? '',
+            modelo: d.modelo ?? '',
+            cantidad: String(unidades),
+            costo: unidades > 0 && valor > 0 ? String(Math.round((valor / unidades) * 100) / 100) : '',
+          }
+        }),
+      )
+    } catch (x) {
+      setError(mensajeError(x))
+    } finally {
+      setBuscando(false)
+    }
+  }
 
   const guardarFactura = async () => {
     setError(null)
@@ -148,7 +209,7 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
   return (
     <Modal
       abierto
-      titulo="Cargar factura de SAREGO"
+      titulo="Importar factura de SAREGO"
       onCerrar={onCerrar}
       pie={
         <>
@@ -162,6 +223,30 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
       <span className="sec chico">
         El cliente verá estos neumáticos como “facturado, por recibir” y los pasará a su inventario cuando los reciba.
       </span>
+      <div className="tarjeta pila" style={{ margin: 0, background: 'var(--superficie-2)' }}>
+        <b>Buscar la factura en el ERP</b>
+        <div className="fila">
+          <input
+            value={buscar}
+            onChange={(e) => setBuscar(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && void importar()}
+            placeholder="Número de factura (ej.: 12670)"
+            style={{ maxWidth: 260 }}
+          />
+          <button className="primario" disabled={buscando} onClick={() => void importar()}>
+            {buscando ? 'Buscando…' : 'Traer del ERP'}
+          </button>
+        </div>
+        {origen && (
+          <div className={'aviso chico' + (origen.coincide === false ? ' alerta' : '')}>
+            Factura a nombre de <b>{origen.cliente}</b>.
+            {origen.coincide === false && ' Ojo: no es el cliente del ERP enlazado a esta empresa.'}
+            {origen.ignorados > 0 && ` Se dejaron fuera ${origen.ignorados} artículos que no son cauchos.`} Completa el DOT, la
+            profundidad y la presión si los tienes.
+          </div>
+        )}
+        <span className="sec chico">También puedes cargarla a mano con las líneas de abajo.</span>
+      </div>
       <div className="grid grid-3">
         <Campo etiqueta="Número de factura">
           <input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Ej.: 22545" />
@@ -323,7 +408,7 @@ export function TarjetaFacturas() {
           <h2>Facturas de neumáticos de SAREGO</h2>
           {pendientes.length > 0 && <span className="sec chico">{pendientes.length} por recibir</span>}
         </div>
-        {sarego && puedeEscribir && <button className="primario" onClick={() => setCargar(true)}>+ Cargar factura</button>}
+        {sarego && puedeEscribir && <button className="primario" onClick={() => setCargar(true)}>+ Importar factura</button>}
       </div>
       {visibles.length === 0 ? (
         <span className="sec chico">Todavía no hay facturas cargadas.</span>
