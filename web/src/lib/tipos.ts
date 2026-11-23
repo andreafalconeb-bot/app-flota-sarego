@@ -180,6 +180,8 @@ export interface Neumatico extends Base {
   /** Factura de SAREGO de donde vino, y código del artículo en el ERP */
   factura_id?: string | null
   articulo_codigo?: string | null
+  /** Veces que se le renovó la banda (0 = original); el serial de la carcasa no cambia */
+  renovaciones?: number
   marca: string | null
   modelo: string | null
   medida: string | null

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useEmpresa } from '../lib/empresa'
 import { ESTADOS_NEUMATICO, etiqueta } from '../lib/catalogos'
@@ -9,6 +9,7 @@ import { FormNeumatico } from '../components/formularios'
 import { Pill, Vacio } from '../components/ui'
 import { TarjetaFacturas } from '../components/facturas'
 import { condiciones } from '../components/neumaticos'
+import { claseNeumatico, resumenInventario, type FilaResumen } from '../lib/calculos'
 import type { Neumatico } from '../lib/tipos'
 
 export default function Neumaticos() {
@@ -20,6 +21,8 @@ export default function Neumaticos() {
 
   // Nuevo o usado, con la última profundidad conocida (compra, desmontaje o inspección)
   const conds = useMemo(() => condiciones(e.datos), [e.datos])
+  const clase = (id: string) => claseNeumatico(e.datos.neumaticos.find((n) => n.id === id)!, conds.get(id)!)
+  const resumen = useMemo(() => resumenInventario(e.datos.neumaticos, clase), [e.datos, conds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const lista = e.datos.neumaticos
     .filter((n) => (!estado ? n.estado !== 'desecho' : n.estado === estado))
@@ -47,6 +50,7 @@ export default function Neumaticos() {
         </select>
       </div>
       <TarjetaFacturas />
+      {estado === 'inventario' && <ResumenInventario resumen={resumen} />}
       <p className="sec chico" style={{ margin: 0 }}>Para montar, rotar o inspeccionar, entra al activo y abre la pestaña Neumáticos.</p>
       {lista.length === 0 ? (
         <Vacio>{e.datos.neumaticos.length ? 'Ninguno coincide.' : 'Registra los neumáticos para seguirlos por posición. Cada uno lleva su serial; la marca a fuego es opcional.'}</Vacio>
@@ -75,7 +79,11 @@ export default function Neumaticos() {
                       ) : (
                         <>
                           {n.estado === 'por_recibir' ? <Pill tono="alerta">{etiqueta(ESTADOS_NEUMATICO, n.estado)}</Pill> : etiqueta(ESTADOS_NEUMATICO, n.estado)}
-                          {n.estado === 'inventario' && <div>{c.nuevo ? <Pill tono="ok">Nuevo</Pill> : <Pill>Usado</Pill>}</div>}
+                          {n.estado === 'inventario' && (
+                            <div>
+                              {clase(n.id) === 'nuevo' ? <Pill tono="ok">Nuevo</Pill> : clase(n.id) === 'renovado' ? <Pill>Renovado ×{n.renovaciones}</Pill> : <Pill>Usado</Pill>}
+                            </div>
+                          )}
                         </>
                       )}
                     </td>
@@ -102,5 +110,53 @@ export default function Neumaticos() {
       )}
       {editar && <FormNeumatico neumatico={editar === 'nuevo' ? undefined : editar} abierto onCerrar={() => setEditar(null)} />}
     </div>
+  )
+}
+
+/** Inventario disponible por medida: marcas con nuevos, usados y renovados. */
+function ResumenInventario({ resumen }: { resumen: ReturnType<typeof resumenInventario> }) {
+  const celdas = (f: FilaResumen, total = false) => (
+    <>
+      <td className="num">{f.nuevo || <span className="sec">0</span>}</td>
+      <td className="num">{f.usado || <span className="sec">0</span>}</td>
+      <td className="num">{f.renovado || <span className="sec">0</span>}</td>
+      <td className="num">{total ? <b>{f.total}</b> : f.total}</td>
+    </>
+  )
+  return (
+    <section className="tarjeta pila">
+      <h2>Inventario disponible por medida</h2>
+      {resumen.length === 0 ? (
+        <span className="sec chico">No hay neumáticos en inventario.</span>
+      ) : (
+        <div className="tabla-wrap">
+          <table>
+            <thead>
+              <tr><th>Medida</th><th>Marca</th><th className="num">Nuevos</th><th className="num">Usados</th><th className="num">Renovados</th><th className="num">Total</th></tr>
+            </thead>
+            <tbody>
+              {resumen.map((r) => (
+                <Fragment key={r.medida}>
+                  {r.marcas.map((f, i) => (
+                    <tr key={f.marca}>
+                      <td>{i === 0 ? <b className="mono">{r.medida}</b> : ''}</td>
+                      <td>{f.marca}</td>
+                      {celdas(f)}
+                    </tr>
+                  ))}
+                  {r.marcas.length > 1 && (
+                    <tr style={{ background: 'var(--superficie-2)' }}>
+                      <td></td>
+                      <td className="chico"><b>Total {r.medida}</b></td>
+                      {celdas(r.total, true)}
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   )
 }
