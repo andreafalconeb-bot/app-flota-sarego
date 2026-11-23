@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { useEmpresa } from '../lib/empresa'
 import { hoyISO, fecha, nombreNeumatico, serialNeumatico } from '../lib/formato'
 import { PLANTILLAS, nombrePosicion, posicionesDe } from '../lib/ejes'
-import { condicionNeumatico, errorProfundidad, profundidadMaxima, estadoPresion, estadoProfundidad, minimo, type CondicionNeumatico, type EstadoMedida } from '../lib/calculos'
+import { condicionNeumatico, errorProfundidad, fugaLenta, presionActual, profundidadMaxima, estadoPresion, estadoProfundidad, minimo, type CondicionNeumatico, type EstadoMedida } from '../lib/calculos'
 import type { Activo, InspeccionNeumatico, Neumatico } from '../lib/tipos'
 import { InspeccionGrafica, type FilaInspeccion } from './inspeccionGrafica'
 import { LeyendaEstados, PlantaVehiculo, type Celda } from './planta'
@@ -55,6 +55,15 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
     [datos.neumaticos, activo.id],
   )
   const medidas = useMemo(() => ultimasMediciones(activo.id, datos), [activo.id, datos])
+  const { tiene } = useEmpresa()
+  // Fuga lenta: alarma, solo en la versión pago
+  const fugas = useMemo(() => {
+    if (!tiene('alarmas')) return []
+    const fechas = new Map(datos.inspecciones.map((i) => [i.id, i.fecha]))
+    return [...montados.entries()].filter(([, n]) =>
+      fugaLenta(datos.inspeccionNeumaticos.filter((x) => x.neumatico_id === n.id).map((x) => ({ ...x, fecha: fechas.get(x.inspeccion_id) ?? '' }))),
+    )
+  }, [datos, montados, tiene])
 
   if (!plantilla.ejes.length) {
     return <Vacio>Este activo no lleva neumáticos (cámbialo en “Datos” si no es así).</Vacio>
@@ -64,14 +73,26 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
     const n = montados.get(pos)
     if (!n) return { estado: null, ayuda: `${nombrePosicion(pos)}: vacía, toca para montar` }
     const m = medidas.get(pos)
-    const ep = m ? estadoPresion(m.presion_psi, m.presion_ideal_psi) : 'sin_dato'
+    const actual = m ? presionActual(m) : null
+    const ep = m ? estadoPresion(actual, m.presion_ideal_psi) : 'sin_dato'
     const ed = m ? estadoProfundidad(m.profundidad_min_mm) : 'sin_dato'
     const peor: EstadoMedida = [ep, ed].includes('critico') ? 'critico' : [ep, ed].includes('alerta') ? 'alerta' : m ? 'ok' : 'sin_dato'
+    // Se encontró fuera de rango y se corrigió en la inspección
+    const corregida = m != null && actual !== m.presion_psi && estadoPresion(m.presion_psi, m.presion_ideal_psi) !== 'ok'
     return {
       estado: peor,
       titulo: nombreNeumatico(n),
-      detalle: m ? <>{m.presion_psi ?? '–'} psi<br />{m.profundidad_min_mm ?? '–'} mm</> : <span className="sec">sin medir</span>,
-      ayuda: `${nombrePosicion(pos)} · ${nombreNeumatico(n)}`,
+      detalle: m ? (
+        <>
+          {actual ?? '–'} psi
+          {corregida && <span className="sec"> (enc. {m.presion_psi})</span>}
+          <br />
+          {m.profundidad_min_mm ?? '–'} mm
+        </>
+      ) : (
+        <span className="sec">sin medir</span>
+      ),
+      ayuda: `${nombrePosicion(pos)} · ${nombreNeumatico(n)}${corregida ? ` · se encontró en ${m!.presion_psi} psi y se ajustó` : ''}`,
     }
   }
 
@@ -83,6 +104,12 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
           <button className="primario" onClick={() => setInspeccionar(true)}>Inspección de presión y profundidad</button>
         )}
       </div>
+      {fugas.length > 0 && (
+        <div className="aviso alerta chico" role="status">
+          <b>Posible fuga lenta</b> (se encontraron bajos en sus 2 últimas inspecciones, aunque se corrigieron):{' '}
+          {fugas.map(([p, n]) => `${p} ${nombreNeumatico(n)}`).join(' · ')}. Revisa válvula, rin y pinchazos.
+        </div>
+      )}
       <PlantaVehiculo configuracion={activo.configuracion} celda={celda} onElegir={setPosicion} />
       <LeyendaEstados />
       {posicion && <Posicion key={posicion} activo={activo} posicion={posicion} montado={montados.get(posicion) ?? null} onCerrar={() => setPosicion(null)} />}
@@ -286,7 +313,7 @@ function Inspeccion({ activo, montados, onCerrar }: { activo: Activo; montados: 
   const { guardar, datos } = useEmpresa()
   const posiciones = posicionesDe(activo.configuracion).filter((p) => montados.has(p))
   const [filas, setFilas] = useState<Record<string, FilaInspeccion>>(() =>
-    Object.fromEntries(posiciones.map((p) => [p, { presion: '', p1: '', p2: '', p3: '', valvula: 'ok', observacion: '' }])),
+    Object.fromEntries(posiciones.map((p) => [p, { presion: '', dejada: '', p1: '', p2: '', p3: '', valvula: 'ok', observacion: '' }])),
   )
   const [km, setKm] = useState(activo.km_actual != null ? String(activo.km_actual) : '')
   const [horas, setHoras] = useState(activo.horas_actual != null ? String(activo.horas_actual) : '')
@@ -321,6 +348,7 @@ function Inspeccion({ activo, montados, onCerrar }: { activo: Activo; montados: 
           neumatico_id: n.id,
           posicion: p,
           presion_psi: num(f.presion),
+          presion_dejada_psi: num(f.dejada) ?? num(f.presion),
           presion_ideal_psi: n.presion_ideal_psi,
           profundidades_mm: profundidades.length ? profundidades : null,
           profundidad_min_mm: minimo(profundidades),

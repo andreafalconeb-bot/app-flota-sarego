@@ -464,6 +464,20 @@ export function errorProfundidad(valores: (number | null)[], maxima: number | nu
   return mal.length ? `No puede pasar de ${maxima} mm (profundidad de nuevo); anotaste ${mal.join(', ')} mm.` : null
 }
 
+/** Presión actual del neumático tras una inspección: la dejada, o la encontrada si no se ajustó. */
+export function presionActual(m: { presion_psi: number | null; presion_dejada_psi?: number | null }): number | null {
+  return m.presion_dejada_psi ?? m.presion_psi
+}
+
+/**
+ * Posible fuga lenta: el neumático se ENCONTRÓ bajo (10 % o más bajo la
+ * ideal) en sus 2 últimas inspecciones, aunque se haya corregido cada vez.
+ */
+export function fugaLenta(lecturas: { fecha: string; presion_psi: number | null; presion_ideal_psi: number | null }[]): boolean {
+  const ultimas = lecturas.filter((l) => l.presion_psi != null && l.presion_ideal_psi).sort((a, b) => b.fecha.localeCompare(a.fecha)).slice(0, 2)
+  return ultimas.length === 2 && ultimas.every((l) => (desviacionPresion(l.presion_psi, l.presion_ideal_psi) ?? 0) <= -0.1)
+}
+
 export function minimo(valores: (number | null | undefined)[]): number | null {
   const v = valores.filter((x): x is number => x != null && !isNaN(x))
   return v.length ? Math.min(...v) : null

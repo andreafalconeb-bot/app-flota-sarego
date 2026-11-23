@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
+import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
 import { aplicar } from './datos'
 import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type Servicio } from './tipos'
 
@@ -251,5 +251,18 @@ describe('profundidadMaxima', () => {
     expect(errorProfundidad([14, 15, null], 14)).toMatch(/No puede pasar de 14 mm/)
     expect(errorProfundidad([14, 12], 14)).toBeNull()
     expect(errorProfundidad([20], null)).toBeNull()
+  })
+})
+
+describe('presión encontrada y dejada', () => {
+  it('la actual es la dejada, o la encontrada si no se ajustó', () => {
+    expect(presionActual({ presion_psi: 85, presion_dejada_psi: 110 })).toBe(110)
+    expect(presionActual({ presion_psi: 105, presion_dejada_psi: null })).toBe(105)
+  })
+  it('fuga lenta: encontrado bajo en las 2 últimas inspecciones', () => {
+    const l = (fecha: string, presion_psi: number) => ({ fecha, presion_psi, presion_ideal_psi: 110 })
+    expect(fugaLenta([l('2026-11-01', 90), l('2026-11-15', 95)])).toBe(true)
+    expect(fugaLenta([l('2026-11-01', 90), l('2026-11-15', 108)])).toBe(false)
+    expect(fugaLenta([l('2026-11-15', 90)])).toBe(false)
   })
 })

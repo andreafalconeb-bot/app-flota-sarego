@@ -16,7 +16,10 @@ import type { Activo, Neumatico } from '../lib/tipos'
 import { num } from './ui'
 
 export interface FilaInspeccion {
+  /** Presión encontrada */
   presion: string
+  /** Presión dejada después de ajustar (vacía = no se ajustó) */
+  dejada: string
   p1: string
   p2: string
   p3: string
@@ -218,7 +221,7 @@ export function InspeccionGrafica({ activo, montados, posiciones, filas, set, ma
             const mm = medida(filas[p], nn)
             return {
               estado: mm.estado,
-              titulo: mm.presion != null ? `${mm.presion} psi` : '— psi',
+              titulo: mm.presion != null ? (num(filas[p].dejada) != null && num(filas[p].dejada) !== mm.presion ? `${mm.presion}→${filas[p].dejada}` : `${mm.presion} psi`) : '— psi',
               detalle: mm.mm != null ? `${mm.mm} mm` : <span className="sec">— mm</span>,
               ayuda: `${nombrePosicion(p)} · ${nombreNeumatico(nn)}`,
             }
@@ -236,7 +239,7 @@ export function InspeccionGrafica({ activo, montados, posiciones, filas, set, ma
             <div className="pila" style={{ gap: 6, alignItems: 'center' }}>
               <Manometro presion={m.presion} ideal={n.presion_ideal_psi} />
               <label className="campo" style={{ width: '100%' }}>
-                <span>Presión en frío (psi)</span>
+                <span>Presión encontrada, en frío (psi)</span>
                 <input
                   ref={refPresion}
                   className="entrada-grande"
@@ -246,6 +249,24 @@ export function InspeccionGrafica({ activo, montados, posiciones, filas, set, ma
                   onKeyDown={(e) => e.key === 'Enter' && refs[0].current?.focus()}
                 />
               </label>
+              {(m.ep === 'alerta' || m.ep === 'critico') && (
+                <div className="aviso chico pila" style={{ gap: 6, width: '100%' }}>
+                  <b>¿La ajustaste?</b>
+                  <span className="sec">La encontrada queda registrada: es con la que rodó el vehículo.</span>
+                  <div className="fila">
+                    {n.presion_ideal_psi != null && (
+                      <button type="button" className={'chico' + (num(f.dejada) === n.presion_ideal_psi ? ' primario' : '')} onClick={() => set(elegida, 'dejada', String(n.presion_ideal_psi))}>
+                        Ajusté a la ideal ({n.presion_ideal_psi})
+                      </button>
+                    )}
+                    <input inputMode="decimal" placeholder="Dejada (psi)" aria-label="Presión dejada" value={f.dejada} onChange={(e) => set(elegida, 'dejada', e.target.value)} style={{ maxWidth: 120 }} />
+                    {f.dejada && <button type="button" className="chico" onClick={() => set(elegida, 'dejada', '')}>No la ajusté</button>}
+                  </div>
+                  {num(f.dejada) != null && (
+                    <span>Quedó en <b>{f.dejada} psi</b> · {TEXTO_PRESION[estadoPresion(num(f.dejada), n.presion_ideal_psi)]}</span>
+                  )}
+                </div>
+              )}
             </div>
             <div className="pila" style={{ gap: 6, alignItems: 'center' }}>
               <PerfilBanda ranuras={m.ranuras} nuevo={maxima(n)} />

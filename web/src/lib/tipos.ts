@@ -230,7 +230,10 @@ export interface InspeccionNeumatico {
   inspeccion_id: string
   neumatico_id: string | null
   posicion: string
+  /** Presión ENCONTRADA: con la que rodó el vehículo */
   presion_psi: number | null
+  /** Presión DEJADA después de ajustar (0133); igual a la encontrada si no se ajustó */
+  presion_dejada_psi?: number | null
   presion_ideal_psi: number | null
   profundidades_mm: number[] | null
   profundidad_min_mm: number | null
