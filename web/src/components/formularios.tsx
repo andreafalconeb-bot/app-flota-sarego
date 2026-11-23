@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useEmpresa } from '../lib/empresa'
 import { hoyISO } from '../lib/formato'
 import { ADITIVOS, COMBUSTIBLES, COMPONENTES, CUENTAS, MEDIDORES, TIPOS_COSTO, TIPOS_SERVICIO, compartimientosSugeridos } from '../lib/catalogos'
+import { serieMarcas } from '../lib/calculos'
 import { plantillaPorTipo } from '../lib/ejes'
 import { SelectorEjes, SelectorTipo } from './dibujos'
 import type { Activo, Carga, Compartimiento, Costo, Neumatico, Servicio } from '../lib/tipos'
@@ -719,6 +720,8 @@ export function FormCosto({ activoId, abierto, onCerrar }: { activoId?: string; 
 // ------------------------------------------------------------
 // Neumático nuevo
 // ------------------------------------------------------------
+const MAX_LOTE = 100
+
 export function FormNeumatico({ neumatico, abierto, onCerrar }: { neumatico?: Neumatico; abierto: boolean; onCerrar: () => void }) {
   const { guardar, datos } = useEmpresa()
   const [f, setF] = useState(() => ({
@@ -733,7 +736,11 @@ export function FormNeumatico({ neumatico, abierto, onCerrar }: { neumatico?: Ne
     fecha_compra: neumatico?.fecha_compra ?? '',
     notas: neumatico?.notas ?? '',
   }))
+  // Compra de varios iguales: una sola carga con las marcas a fuego en serie
+  const [cantidad, setCantidad] = useState('1')
   const { error, enviando, enviar } = useEnvio(onCerrar)
+  const cant = neumatico ? 1 : Math.max(1, Math.floor(num(cantidad) ?? 1))
+  const serie = serieMarcas(f.marca_fuego, cant)
 
   return (
     <Modal
@@ -746,12 +753,13 @@ export function FormNeumatico({ neumatico, abierto, onCerrar }: { neumatico?: Ne
           enviando={enviando}
           onGuardar={() =>
             void enviar(async () => {
-              const marca = f.marca_fuego.trim().toUpperCase()
-              if (!marca) return 'Falta la marca a fuego.'
-              if (datos.neumaticos.some((n) => n.marca_fuego === marca && n.id !== neumatico?.id)) return 'Ya hay un neumático con esa marca a fuego.'
-              const fila: Partial<Neumatico> = {
+              if (!f.marca_fuego.trim()) return 'Falta la marca a fuego.'
+              if (cant > MAX_LOTE) return `Se pueden cargar hasta ${MAX_LOTE} neumáticos de una vez.`
+              if (!serie) return 'Para cargar varios, la marca a fuego del primero debe terminar en número (ej.: TG001).'
+              const repetidas = serie.filter((m) => datos.neumaticos.some((n) => n.marca_fuego === m && n.id !== neumatico?.id))
+              if (repetidas.length) return `Ya existe${repetidas.length > 1 ? 'n' : ''} ${repetidas.slice(0, 5).join(', ')}${repetidas.length > 5 ? '…' : ''}. Cambia la marca a fuego inicial.`
+              const comun: Partial<Neumatico> = {
                 ...(neumatico ?? { estado: 'inventario', activo_id: null, posicion: null, montado_at: null, km_montaje: null, horas_montaje: null }),
-                marca_fuego: marca,
                 marca: f.marca.trim() || null,
                 modelo: f.modelo.trim() || null,
                 medida: f.medida.trim() || null,
@@ -762,16 +770,28 @@ export function FormNeumatico({ neumatico, abierto, onCerrar }: { neumatico?: Ne
                 fecha_compra: f.fecha_compra || null,
                 notas: f.notas.trim() || null,
               }
-              await guardar('neumaticos', fila)
+              for (const marca of serie) await guardar('neumaticos', { ...comun, marca_fuego: marca })
             })
           }
         />
       }
     >
       <div className="grid grid-2">
-        <Campo etiqueta="Marca a fuego (letras y números)">
-          <input value={f.marca_fuego} onChange={(e) => setF({ ...f, marca_fuego: e.target.value })} style={{ textTransform: 'uppercase' }} />
+        {!neumatico && (
+          <Campo etiqueta="Cantidad (neumáticos iguales de la misma compra)">
+            <input inputMode="numeric" value={cantidad} onChange={(e) => setCantidad(e.target.value.replace(/\D/g, ''))} />
+          </Campo>
+        )}
+        <Campo etiqueta={cant > 1 ? 'Marca a fuego del primero' : 'Marca a fuego (letras y números)'}>
+          <input value={f.marca_fuego} onChange={(e) => setF({ ...f, marca_fuego: e.target.value })} style={{ textTransform: 'uppercase' }} placeholder={cant > 1 ? 'Ej.: TG001' : undefined} />
         </Campo>
+        {cant > 1 && (
+          <div className={'aviso chico ancho-completo' + (serie ? '' : ' alerta')}>
+            {serie
+              ? `Se cargan ${cant} neumáticos con los mismos datos: ${serie[0]} a ${serie[serie.length - 1]}.`
+              : 'La marca a fuego del primero debe terminar en número (ej.: TG001) para numerar los demás.'}
+          </div>
+        )}
         <Campo etiqueta="DOT">
           <input value={f.dot} onChange={(e) => setF({ ...f, dot: e.target.value })} placeholder="Ej.: 3524 (semana 35 de 2024)" />
         </Campo>
@@ -790,7 +810,7 @@ export function FormNeumatico({ neumatico, abierto, onCerrar }: { neumatico?: Ne
         <Campo etiqueta="Presión ideal (psi)">
           <input inputMode="decimal" value={f.presion_ideal_psi} onChange={(e) => setF({ ...f, presion_ideal_psi: e.target.value })} />
         </Campo>
-        <Campo etiqueta="Costo (US$)">
+        <Campo etiqueta={cant > 1 ? 'Costo por neumático (US$)' : 'Costo (US$)'}>
           <input inputMode="decimal" value={f.costo} onChange={(e) => setF({ ...f, costo: e.target.value })} />
         </Campo>
         <Campo etiqueta="Fecha de compra">

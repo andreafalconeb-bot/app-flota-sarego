@@ -323,6 +323,21 @@ export function estadoProfundidad(mm: number | null): EstadoMedida {
   return 'ok'
 }
 
+/**
+ * Marcas a fuego en serie para cargar una compra de varios neumáticos
+ * iguales de una vez: "TG001" x 3 = TG001, TG002, TG003. Respeta los
+ * ceros a la izquierda. Si la marca no termina en número, null.
+ */
+export function serieMarcas(inicio: string, cantidad: number): string[] | null {
+  const marca = inicio.trim().toUpperCase()
+  if (cantidad <= 1) return marca ? [marca] : null
+  const m = /^(.*?)(\d+)$/.exec(marca)
+  if (!m) return null
+  const [, prefijo, numero] = m
+  const desde = parseInt(numero, 10)
+  return Array.from({ length: cantidad }, (_, i) => prefijo + String(desde + i).padStart(numero.length, '0'))
+}
+
 export function minimo(valores: (number | null | undefined)[]): number | null {
   const v = valores.filter((x): x is number => x != null && !isNaN(x))
   return v.length ? Math.min(...v) : null

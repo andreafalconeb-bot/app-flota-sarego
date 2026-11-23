@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, proximoCambio, tramosConsumo } from './calculos'
+import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, proximoCambio, serieMarcas, tramosConsumo } from './calculos'
 import { aplicar } from './datos'
 import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type Servicio } from './tipos'
 
@@ -173,5 +173,16 @@ describe('aplicar', () => {
     expect(d.activos).toEqual([{ id: 'a1', codigo: 'U-01', placa: 'A1B' }])
     d = aplicar(d, { coleccion: 'activos', op: 'delete', id: 'a1' })
     expect(d.activos).toHaveLength(0)
+  })
+})
+
+describe('serieMarcas', () => {
+  it('numera en serie respetando los ceros', () => {
+    expect(serieMarcas('tg001', 3)).toEqual(['TG001', 'TG002', 'TG003'])
+    expect(serieMarcas('A-98', 3)).toEqual(['A-98', 'A-99', 'A-100'])
+    expect(serieMarcas('TG010', 1)).toEqual(['TG010'])
+  })
+  it('sin número al final no puede numerar varios', () => {
+    expect(serieMarcas('TGX', 2)).toBeNull()
   })
 })
