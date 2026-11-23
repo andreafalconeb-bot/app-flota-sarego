@@ -63,6 +63,17 @@ function avisar() {
   oyentes.forEach((f) => f())
 }
 
+// Subir la cola y bajar la copia nunca corren a la vez: si un guardado
+// subía su cambio mientras una sincronización bajaba la copia, la copia
+// bajada (sin el cambio) pisaba la local y el registro nuevo no se veía
+// hasta la siguiente sincronización.
+let turno: Promise<unknown> = Promise.resolve()
+function enSerie<T>(fn: () => Promise<T>): Promise<T> {
+  const r = turno.then(fn, fn)
+  turno = r.catch(() => undefined)
+  return r
+}
+
 /** Aplica un cambio a la copia en memoria (sin tocar el original). */
 export function aplicar(datos: Datos, c: Pick<Cambio, 'coleccion' | 'op' | 'id' | 'fila'>): Datos {
   const lista = datos[c.coleccion] as unknown as { id: string }[]
@@ -107,8 +118,11 @@ export async function cola(empresa: string): Promise<Cambio[]> {
 export async function registrarCambio(c: Omit<Cambio, 'at' | 'n'>): Promise<Datos> {
   const d = await db()
   const cambio: Cambio = { ...c, at: new Date().toISOString() }
-  const datos = aplicar(await leerCopia(c.empresa), cambio)
+  // Leer y escribir la copia en la misma transacción, para no pisar una
+  // copia que la sincronización esté escribiendo al mismo tiempo
   const tx = d.transaction(['copia', 'cola'], 'readwrite')
+  const guardado = (await tx.objectStore('copia').get(c.empresa)) as Datos | undefined
+  const datos = aplicar({ ...datosVacios(), ...(guardado ?? {}) }, cambio)
   await tx.objectStore('copia').put(datos, c.empresa)
   await tx.objectStore('cola').add(cambio)
   await tx.done
@@ -133,7 +147,11 @@ function esErrorDeRed(mensaje: string) {
  * rechazo de la base (permisos, datos inválidos) se saca de la cola y se
  * anota para mostrarlo, para no trabar todo lo demás.
  */
-export async function subirCola(empresa: string): Promise<{ enviados: number; rechazados: Rechazo[]; sinRed: boolean }> {
+export function subirCola(empresa: string): Promise<{ enviados: number; rechazados: Rechazo[]; sinRed: boolean }> {
+  return enSerie(() => subirColaYa(empresa))
+}
+
+async function subirColaYa(empresa: string): Promise<{ enviados: number; rechazados: Rechazo[]; sinRed: boolean }> {
   const d = await db()
   const pendientes = await cola(empresa)
   const rechazados: Rechazo[] = []
@@ -202,12 +220,22 @@ export interface ResultadoSync {
  * lo que haya quedado en cola (cambios hechos mientras tanto) y registra
  * la hora en la base para el control de bloqueo.
  */
-export async function sincronizar(empresa: string): Promise<ResultadoSync> {
-  const subida = await subirCola(empresa)
+export function sincronizar(empresa: string): Promise<ResultadoSync> {
+  return enSerie(() => sincronizarYa(empresa))
+}
+
+async function sincronizarYa(empresa: string): Promise<ResultadoSync> {
+  const subida = await subirColaYa(empresa)
   if (subida.sinRed) throw new Error('Sin conexión con la nube. Los cambios siguen guardados en este equipo.')
-  let datos = await bajarTodo(empresa)
-  for (const c of await cola(empresa)) datos = aplicar(datos, c)
-  await escribirCopia(empresa, datos)
+  const bajada = await bajarTodo(empresa)
+  // Lo que se guardó mientras bajaba sigue en la cola: se lee la cola y se
+  // escribe la copia en una sola transacción para no perder nada
+  const tx = (await db()).transaction(['copia', 'cola'], 'readwrite')
+  const pendientes = ((await tx.objectStore('cola').getAll()) as Cambio[]).filter((c) => c.empresa === empresa)
+  let datos = bajada
+  for (const c of pendientes) datos = aplicar(datos, c)
+  await tx.objectStore('copia').put(datos, empresa)
+  await tx.done
   const { data: hora, error } = await supabase.rpc('flota_registrar_sincronizacion', { p_empresa: empresa })
   if (error) throw new Error(error.message)
   const ultimaSync = (hora as string | null) ?? new Date().toISOString()
