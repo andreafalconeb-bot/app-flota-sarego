@@ -121,9 +121,9 @@ function Fluidos({ activo }: { activo: Activo }) {
               <div key={c.id} className="tarjeta pila" style={{ margin: 0 }}>
                 <div className="fila-entre">
                   <h3>{etiqueta(COMPONENTES, c.componente)}</h3>
-                  {p.estado === 'vencido' && <Pill tono="critico">Cambio vencido</Pill>}
-                  {p.estado === 'proximo' && <Pill tono="alerta">Cambio próximo</Pill>}
-                  {p.estado === 'ok' && <Pill tono="ok">Al día</Pill>}
+                  {e.tiene('alarmas') && p.estado === 'vencido' && <Pill tono="critico">Cambio vencido</Pill>}
+                  {e.tiene('alarmas') && p.estado === 'proximo' && <Pill tono="alerta">Cambio próximo</Pill>}
+                  {e.tiene('alarmas') && p.estado === 'ok' && <Pill tono="ok">Al día</Pill>}
                 </div>
                 <span className="chico">
                   {c.producto ?? 'Aceite sin indicar'}{c.capacidad_l ? ` · ${numero(c.capacidad_l, 1)} L` : ''}
@@ -136,10 +136,18 @@ function Fluidos({ activo }: { activo: Activo }) {
                   <span className="chico sec">
                     Último cambio: {fecha(p.ultimo.fecha)}
                     {p.ultimo[u === 'km' ? 'km' : 'horas'] != null && ` a ${numero(p.ultimo[u === 'km' ? 'km' : 'horas'])} ${unidadTxt(u)}`}
-                    {p.restante != null && ` · ${textoRestante(p.restante, u)}`}
+                    {e.tiene('alarmas') && p.restante != null && ` · ${textoRestante(p.restante, u)}`}
                   </span>
                 ) : (
                   <span className="chico sec">Sin cambios registrados.</span>
+                )}
+                {/* Versión gratis: sin alarmas, solo el dato para verificarlo a mano */}
+                {!e.tiene('alarmas') && (p.vence != null || p.venceFecha) && (
+                  <span className="chico">
+                    Próximo cambio:{p.vence != null && ` a los ${numero(p.vence)} ${unidadTxt(u)}`}
+                    {p.vence != null && p.venceFecha && ' o'}
+                    {p.venceFecha && ` el ${fecha(p.venceFecha)}`}
+                  </span>
                 )}
                 {e.tiene('intervalo_sugerido') && sugerido && (
                   <div className="aviso chico">

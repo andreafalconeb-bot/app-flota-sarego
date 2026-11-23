@@ -47,6 +47,10 @@ describe('disponible', () => {
     expect(disponible('gratis', 'combustible')).toBe(false)
     expect(disponible('pago', 'combustible')).toBe(true)
   })
+  it('las alarmas solo en la versión pago', () => {
+    expect(disponible('gratis', 'alarmas')).toBe(false)
+    expect(disponible('pago', 'alarmas')).toBe(true)
+  })
 })
 
 describe('proximoCambio', () => {

@@ -31,6 +31,7 @@ export default function Activos() {
   }, [e.datos, texto, tipo, inactivos])
 
   const activos = e.datos.activos.filter((a) => a.activo).length
+  const alarmas = e.tiene('alarmas')
   const tiposUsados = new Set(e.datos.activos.map((a) => a.tipo))
 
   return (
@@ -79,9 +80,10 @@ export default function Activos() {
                     <div className="sec chico">{a.lectura_at ? fecha(a.lectura_at) : 'sin lectura'}</div>
                   </td>
                   <td>
-                    {peor === 'vencido' && <Pill tono="critico">Cambio vencido</Pill>}
-                    {peor === 'proximo' && <Pill tono="alerta">Cambio próximo</Pill>}
-                    {peor === 'ok' && <Pill tono="ok">Al día</Pill>}
+                    {!alarmas && peor !== 'sin_datos' && <span className="sec chico">Ver en la ficha</span>}
+                    {alarmas && peor === 'vencido' && <Pill tono="critico">Cambio vencido</Pill>}
+                    {alarmas && peor === 'proximo' && <Pill tono="alerta">Cambio próximo</Pill>}
+                    {alarmas && peor === 'ok' && <Pill tono="ok">Al día</Pill>}
                     {peor === 'sin_datos' && <span className="sec chico">Sin intervalo</span>}
                   </td>
                 </tr>
