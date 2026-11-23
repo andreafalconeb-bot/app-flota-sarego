@@ -783,6 +783,9 @@ export function FormNeumatico({ neumatico, abierto, onCerrar }: { neumatico?: Ne
           {neumatico.estado === 'por_recibir' && <span className="pill alerta">Facturado por SAREGO, por recibir</span>}
         </div>
       )}
+      {neumatico && !bloqueado && (neumatico.estado === 'inventario' || neumatico.estado === 'reparacion') && (
+        <RenovarBanda neumatico={neumatico} onListo={onCerrar} />
+      )}
       {bloqueado && <div className="aviso alerta">Este neumático viene en una factura de SAREGO. Recibe la factura en Neumáticos para pasarlo a tu inventario.</div>}
       <fieldset disabled={bloqueado} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }} className="pila">
         <div className="grid grid-2">
@@ -835,5 +838,53 @@ export function FormNeumatico({ neumatico, abierto, onCerrar }: { neumatico?: Ne
       </fieldset>
       <ErrorMsg error={error} />
     </Modal>
+  )
+}
+
+/**
+ * Renovar la banda (reencauche): el serial de la carcasa no cambia; se
+ * suma una renovación y la profundidad de la banda nueva queda como la
+ * última medida (así el inventario lo muestra como renovado).
+ */
+function RenovarBanda({ neumatico, onListo }: { neumatico: Neumatico; onListo: () => void }) {
+  const { guardar, puedeEscribir } = useEmpresa()
+  const [abierto, setAbierto] = useState(false)
+  const [mm, setMm] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const veces = neumatico.renovaciones ?? 0
+  if (!puedeEscribir) return null
+  if (!abierto) {
+    return (
+      <div className="fila chico">
+        <span className="sec">{veces ? `Banda renovada ${veces} ${veces === 1 ? 'vez' : 'veces'}.` : 'Banda original.'}</span>
+        <button className="chico" onClick={() => setAbierto(true)}>Registrar banda renovada (reencauche)</button>
+      </div>
+    )
+  }
+  const renovar = async () => {
+    const p = num(mm)
+    if (p == null) return setError('Anota la profundidad de la banda renovada.')
+    try {
+      await guardar('neumaticos', { ...neumatico, estado: 'inventario', renovaciones: veces + 1 })
+      await guardar('movimientos', {
+        neumatico_id: neumatico.id, tipo: 'reparacion', activo_id: null, posicion: null, posicion_anterior: null,
+        fecha: hoyISO(), km: null, horas: null, profundidad_mm: p, motivo: `Banda renovada (${veces + 1}ª vez)`,
+      })
+      onListo()
+    } catch (e) {
+      setError(mensajeError(e))
+    }
+  }
+  return (
+    <div className="tarjeta pila" style={{ margin: 0 }}>
+      <b>Banda renovada</b>
+      <span className="sec chico">El serial {serialNeumatico(neumatico)} sigue siendo el de la carcasa. Queda en inventario como renovado.</span>
+      <div className="fila">
+        <input inputMode="decimal" placeholder="Profundidad de la banda renovada (mm)" value={mm} onChange={(e) => setMm(e.target.value)} style={{ maxWidth: 260 }} />
+        <button className="primario" onClick={() => void renovar()}>Guardar renovación</button>
+        <button onClick={() => setAbierto(false)}>Cancelar</button>
+      </div>
+      <ErrorMsg error={error} />
+    </div>
   )
 }

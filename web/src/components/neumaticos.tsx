@@ -238,7 +238,7 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
                     opciones={Object.fromEntries(
                       disponibles.map((n) => {
                         const c = conds.get(n.id)!
-                        return [n.id, `${c.nuevo ? 'NUEVO' : 'USADO'} ${c.mm != null ? c.mm + ' mm' : ''} · ${nombreNeumatico(n)}${n.marca_fuego ? ` (${serialNeumatico(n)})` : ''} · ${n.marca ?? ''} ${n.medida ?? ''} · DOT ${n.dot ?? '—'}`]
+                        return [n.id, `${(n.renovaciones ?? 0) > 0 ? 'RENOVADO' : c.nuevo ? 'NUEVO' : 'USADO'} ${c.mm != null ? c.mm + ' mm' : ''} · ${nombreNeumatico(n)}${n.marca_fuego ? ` (${serialNeumatico(n)})` : ''} · ${n.marca ?? ''} ${n.medida ?? ''} · DOT ${n.dot ?? '—'}`]
                       }),
                     )}
                     vacio="Elige…"

@@ -393,6 +393,52 @@ export function condicionNeumatico(
   return { nuevo, mm: n.profundidad_inicial_mm, fecha: null, origen: n.profundidad_inicial_mm != null ? 'compra' : null, activoId: ultimoDesmontaje?.activo_id ?? null }
 }
 
+/** Nuevo (nunca montado, banda original), usado (ya montado) o renovado (banda renovada). */
+export type ClaseNeumatico = 'nuevo' | 'usado' | 'renovado'
+
+export function claseNeumatico(n: { renovaciones?: number | null }, c: { nuevo: boolean }): ClaseNeumatico {
+  if ((n.renovaciones ?? 0) > 0) return 'renovado'
+  return c.nuevo ? 'nuevo' : 'usado'
+}
+
+export interface FilaResumen {
+  marca: string
+  nuevo: number
+  usado: number
+  renovado: number
+  total: number
+}
+
+/**
+ * Inventario disponible resumido siempre por medida (Andrea,
+ * 23/nov/2026): por cada medida, sus marcas con la cantidad de nuevos,
+ * usados y renovados, y el total de la medida.
+ */
+export function resumenInventario(
+  neumaticos: { id: string; estado: string; medida: string | null; marca: string | null; renovaciones?: number | null }[],
+  clase: (id: string) => ClaseNeumatico,
+): { medida: string; marcas: FilaResumen[]; total: FilaResumen }[] {
+  const porMedida = new Map<string, Map<string, FilaResumen>>()
+  for (const n of neumaticos) {
+    if (n.estado !== 'inventario') continue
+    const medida = n.medida?.trim().toUpperCase() || 'Sin medida'
+    const marca = n.marca?.trim().toUpperCase() || 'Sin marca'
+    const marcas = porMedida.get(medida) ?? new Map<string, FilaResumen>()
+    porMedida.set(medida, marcas)
+    const f = marcas.get(marca) ?? { marca, nuevo: 0, usado: 0, renovado: 0, total: 0 }
+    marcas.set(marca, f)
+    f[clase(n.id)]++
+    f.total++
+  }
+  return [...porMedida.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, 'es', { numeric: true }))
+    .map(([medida, marcas]) => {
+      const lista = [...marcas.values()].sort((a, b) => b.total - a.total || a.marca.localeCompare(b.marca))
+      const total = lista.reduce((t, f) => ({ ...t, nuevo: t.nuevo + f.nuevo, usado: t.usado + f.usado, renovado: t.renovado + f.renovado, total: t.total + f.total }), { marca: 'Total', nuevo: 0, usado: 0, renovado: 0, total: 0 })
+      return { medida, marcas: lista, total }
+    })
+}
+
 export function minimo(valores: (number | null | undefined)[]): number | null {
   const v = valores.filter((x): x is number => x != null && !isNaN(x))
   return v.length ? Math.min(...v) : null

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
+import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
 import { aplicar } from './datos'
 import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type Servicio } from './tipos'
 
@@ -214,5 +214,26 @@ describe('condicionNeumatico', () => {
       .toMatchObject({ nuevo: false, mm: 11, origen: 'movimiento', activoId: 'a1' })
     expect(condicionNeumatico(n, movs.slice(0, 1), [{ neumatico_id: 'n1', fecha: '2026-06-01T10:00:00Z', profundidad_min_mm: 13 }]))
       .toMatchObject({ nuevo: false, mm: 13, origen: 'inspeccion' })
+  })
+})
+
+describe('resumenInventario', () => {
+  it('agrupa el inventario por medida y marca, con nuevos, usados y renovados', () => {
+    const ns = [
+      { id: 'a', estado: 'inventario', medida: '295/80R22.5', marca: 'Everton' },
+      { id: 'b', estado: 'inventario', medida: '295/80r22.5', marca: 'EVERTON' },
+      { id: 'c', estado: 'inventario', medida: '295/80R22.5', marca: 'Evergreen', renovaciones: 1 },
+      { id: 'd', estado: 'montado', medida: '295/80R22.5', marca: 'Everton' },
+      { id: 'e', estado: 'inventario', medida: '11R22.5', marca: null },
+    ]
+    const usados = new Set(['b', 'c'])
+    const r = resumenInventario(ns, (id) => claseNeumatico(ns.find((n) => n.id === id)!, { nuevo: !usados.has(id) }))
+    expect(r.map((x) => x.medida)).toEqual(['11R22.5', '295/80R22.5'])
+    expect(r[1].marcas).toEqual([
+      { marca: 'EVERTON', nuevo: 1, usado: 1, renovado: 0, total: 2 },
+      { marca: 'EVERGREEN', nuevo: 0, usado: 0, renovado: 1, total: 1 },
+    ])
+    expect(r[1].total).toMatchObject({ nuevo: 1, usado: 1, renovado: 1, total: 3 })
+    expect(r[0].marcas[0].marca).toBe('Sin marca')
   })
 })
