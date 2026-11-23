@@ -17,7 +17,8 @@ export function ErrorMsg({ error }: { error: string | null | undefined }) {
   return <div className="aviso error" role="alert">{error}</div>
 }
 
-export function Modal({ abierto, titulo, onCerrar, children, pie }: {
+export function Modal({ abierto, titulo, onCerrar, children, pie, ancho }: {
+  ancho?: 'grande'
   abierto: boolean
   titulo: string
   onCerrar: () => void
@@ -32,7 +33,7 @@ export function Modal({ abierto, titulo, onCerrar, children, pie }: {
     if (!abierto && d.open) d.close()
   }, [abierto])
   return (
-    <dialog ref={ref} className="modal" onClose={onCerrar} onCancel={onCerrar}>
+    <dialog ref={ref} className={'modal' + (ancho ? ' ' + ancho : '')} onClose={onCerrar} onCancel={onCerrar}>
       {abierto && (
         <>
           <div className="modal-cab">
