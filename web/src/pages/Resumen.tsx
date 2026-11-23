@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useEmpresa } from '../lib/empresa'
 import { COMPONENTES, TIPOS, etiqueta } from '../lib/catalogos'
 import { dinero, fecha, fechaHora, textoRestante } from '../lib/formato'
-import { estadoPresion, estadoProfundidad, gastoPorCuenta, proximoCambio, type ProximoCambio } from '../lib/calculos'
+import { estadoPresion, estadoProfundidad, gastoPorCuenta, presionActual, proximoCambio, type ProximoCambio } from '../lib/calculos'
 import { nombrePosicion } from '../lib/ejes'
 import { ultimasMediciones } from '../components/neumaticos'
 import { Metrica, Pill, SoloPago, Vacio } from '../components/ui'
@@ -31,12 +31,12 @@ export default function Resumen() {
     const lista: { activo: Activo; pos: string; texto: string; critico: boolean }[] = []
     for (const a of activos) {
       for (const [pos, m] of ultimasMediciones(a.id, datos)) {
-        const ep = estadoPresion(m.presion_psi, m.presion_ideal_psi)
+        const ep = estadoPresion(presionActual(m), m.presion_ideal_psi)
         const ed = estadoProfundidad(m.profundidad_min_mm)
         if (ep === 'ok' && ed === 'ok') continue
         if (ep === 'sin_dato' && ed === 'sin_dato') continue
         const partes = []
-        if (ep === 'alerta' || ep === 'critico') partes.push(`${m.presion_psi} psi (ideal ${m.presion_ideal_psi})`)
+        if (ep === 'alerta' || ep === 'critico') partes.push(`${presionActual(m)} psi (ideal ${m.presion_ideal_psi})`)
         if (ed === 'alerta' || ed === 'critico') partes.push(`${m.profundidad_min_mm} mm`)
         lista.push({ activo: a, pos, texto: partes.join(' · '), critico: ep === 'critico' || ed === 'critico' })
       }
