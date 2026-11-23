@@ -88,6 +88,7 @@ export default function ConfigEmpresa() {
         <Campo etiqueta="Notas internas de SAREGO (el cliente no las ve aquí)"><textarea value={f.notas} onChange={(x) => setF({ ...f, notas: x.target.value })} /></Campo>
         <label className="check"><input type="checkbox" checked={f.activa} onChange={(x) => setF({ ...f, activa: x.target.checked })} /> Empresa activa (si la desactivas, sus usuarios dejan de ver los datos)</label>
       </section>
+      <Asignados empresaId={emp.id} gestion={gestion} online={e.online} />
       <section className="tarjeta pila">
         <h2>Versión y bloqueo</h2>
         {!gestion && <span className="sec chico">Solo la gerencia B2B (gerente u oficina) cambia la versión y los límites.</span>}
@@ -114,5 +115,90 @@ export default function ConfigEmpresa() {
       {ok && <div className="aviso ok">Guardado.</div>}
       <div><button className="primario" disabled={enviando || !e.online} onClick={() => void guardar()}>{enviando ? 'Guardando…' : 'Guardar'}</button></div>
     </div>
+  )
+}
+
+interface Asignado { id: string; user_id: string; nombre: string; rol: 'ingeniero' | 'vendedor' }
+interface Persona { id: string; nombre: string; tipo: 'ingeniero' | 'vendedor' }
+
+/**
+ * Personal de SAREGO asignado a la empresa (migración 0129): cada
+ * ingeniero o vendedor ve solo las empresas que tiene asignadas; el
+ * administrador (gestión) las ve todas y hace las asignaciones.
+ */
+function Asignados({ empresaId, gestion, online }: { empresaId: string; gestion: boolean; online: boolean }) {
+  const { datos: asignados, recargar } = useCarga(async () => {
+    const { data, error } = await supabase.rpc('flota_listar_asignados', { p_empresa: empresaId })
+    if (error) throw new Error(error.message)
+    return (data ?? []) as Asignado[]
+  }, [empresaId])
+  const { datos: personal } = useCarga(async () => {
+    if (!gestion) return [] as Persona[]
+    const { data, error } = await supabase.rpc('flota_personal')
+    if (error) throw new Error(error.message)
+    return (data ?? []) as Persona[]
+  }, [gestion])
+  const [quien, setQuien] = useState('')
+  const [rol, setRol] = useState<'ingeniero' | 'vendedor'>('vendedor')
+  const [error, setError] = useState<string | null>(null)
+  const ya = new Set((asignados ?? []).map((a) => a.user_id))
+  const libres = (personal ?? []).filter((p) => !ya.has(p.id))
+
+  const asignar = async () => {
+    setError(null)
+    const { error: e } = await supabase.from('flota_asignaciones').insert({ empresa_id: empresaId, user_id: quien, rol })
+    if (e) return setError(e.message)
+    setQuien('')
+    await recargar()
+  }
+  const quitar = async (a: Asignado) => {
+    if (!confirm(`¿Quitarle la empresa a ${a.nombre}? Dejará de verla.`)) return
+    setError(null)
+    const { error: e } = await supabase.from('flota_asignaciones').delete().eq('id', a.id)
+    if (e) return setError(e.message)
+    await recargar()
+  }
+
+  return (
+    <section className="tarjeta pila">
+      <h2>Personal de SAREGO asignado</h2>
+      <span className="sec chico">
+        Los ingenieros y vendedores de SAREGO ven solo las empresas que tienen asignadas. El administrador ve todas
+        {gestion ? ' y asigna aquí.' : '; pídele que te asigne o te quite empresas.'}
+      </span>
+      {(asignados ?? []).length === 0 ? (
+        <span className="chico">Nadie asignado todavía.</span>
+      ) : (
+        <table>
+          <tbody>
+            {asignados!.map((a) => (
+              <tr key={a.id}>
+                <td>{a.nombre}</td>
+                <td className="sec chico">{a.rol === 'ingeniero' ? 'Ingeniero' : 'Vendedor'}</td>
+                <td className="num">{gestion && <button className="chico" disabled={!online} onClick={() => void quitar(a)}>Quitar</button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {gestion && (
+        <div className="fila">
+          <select value={quien} onChange={(x) => {
+            setQuien(x.target.value)
+            const p = libres.find((y) => y.id === x.target.value)
+            if (p) setRol(p.tipo)
+          }} style={{ maxWidth: 280 }}>
+            <option value="">Elige a quién asignar…</option>
+            {libres.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+          <select value={rol} onChange={(x) => setRol(x.target.value as typeof rol)} style={{ maxWidth: 150 }}>
+            <option value="vendedor">Vendedor</option>
+            <option value="ingeniero">Ingeniero</option>
+          </select>
+          <button className="primario" disabled={!quien || !online} onClick={() => void asignar()}>Asignar</button>
+        </div>
+      )}
+      <ErrorMsg error={error} />
+    </section>
   )
 }

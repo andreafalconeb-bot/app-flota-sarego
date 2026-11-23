@@ -2,7 +2,7 @@
 // rotación e inspección de presión y profundidad (fase 1, básico).
 import { useMemo, useState } from 'react'
 import { useEmpresa } from '../lib/empresa'
-import { hoyISO, fecha } from '../lib/formato'
+import { hoyISO, fecha, nombreNeumatico, serialNeumatico } from '../lib/formato'
 import { PLANTILLAS, nombrePosicion, posicionesDe } from '../lib/ejes'
 import { VALVULAS } from '../lib/catalogos'
 import { desviacionPresion, estadoPresion, estadoProfundidad, minimo, type EstadoMedida } from '../lib/calculos'
@@ -47,7 +47,7 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
     return (
       <button className={'llanta ' + (n ? peor : 'vacia')} onClick={() => setPosicion(pos)} title={nombrePosicion(pos)}>
         <span className="mono">{pos}</span>
-        <b>{n ? n.marca_fuego : '—'}</b>
+        <b>{n ? nombreNeumatico(n) : '—'}</b>
         {m && (
           <span className="chico">
             {m.presion_psi ?? '–'} psi · {m.profundidad_min_mm ?? '–'} mm
@@ -170,7 +170,7 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
       {montado ? (
         <div className="pila chico">
           <span>
-            Montado: <b className="mono">{montado.marca_fuego}</b> {montado.marca ?? ''} {montado.modelo ?? ''} {montado.medida ?? ''} · DOT {montado.dot ?? '—'}
+            Montado: <b className="mono">{nombreNeumatico(montado)}</b> <span className="sec mono">{serialNeumatico(montado)}</span> {montado.marca ?? ''} {montado.modelo ?? ''} {montado.medida ?? ''} · DOT {montado.dot ?? '—'}
           </span>
           <span className="sec">
             Desde {fecha(montado.montado_at)}
@@ -207,7 +207,7 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
                 <Selector
                   valor={elegido}
                   onCambio={setElegido}
-                  opciones={Object.fromEntries(disponibles.map((n) => [n.id, `${n.marca_fuego} · ${n.marca ?? ''} ${n.medida ?? ''}`]))}
+                  opciones={Object.fromEntries(disponibles.map((n) => [n.id, `${nombreNeumatico(n)}${n.marca_fuego ? ` (${serialNeumatico(n)})` : ''} · ${n.marca ?? ''} ${n.medida ?? ''} · DOT ${n.dot ?? '—'}`]))}
                   vacio="Elige…"
                 />
               </Campo>
@@ -224,7 +224,7 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
               <Selector
                 valor={destino}
                 onCambio={setDestino}
-                opciones={Object.fromEntries(posiciones.map((p) => [p, `${nombrePosicion(p)}${ocupado(p) ? ` (intercambia con ${ocupado(p)!.marca_fuego})` : ''}`]))}
+                opciones={Object.fromEntries(posiciones.map((p) => [p, `${nombrePosicion(p)}${ocupado(p) ? ` (intercambia con ${nombreNeumatico(ocupado(p)!)})` : ''}`]))}
                 vacio="Elige…"
               />
             </Campo>
@@ -338,7 +338,7 @@ function Inspeccion({ activo, montados, onCerrar }: { activo: Activo; montados: 
               return (
                 <tr key={p}>
                   <td>
-                    <b className="mono">{p}</b> <span className="mono chico">{n.marca_fuego}</span>
+                    <b className="mono">{p}</b> <span className="mono chico">{nombreNeumatico(n)}</span>
                     <div className="sec chico">ideal {n.presion_ideal_psi ?? '—'} psi</div>
                   </td>
                   <td style={{ minWidth: 90 }}>

@@ -9,8 +9,14 @@
   bloqueo, aditivos, cuentas de costo) están en el `CLAUDE.md` de ese
   repo, sección "Flota SAREGO".
 - Usuarios: los clientes tienen `profiles.role = 'cliente_externo'` y
-  entran solo aquí; el personal de SAREGO (usuarios B2B internos) ve
-  todas las empresas. Las invitaciones pasan por la Edge Function
+  entran solo aquí. El personal de SAREGO (B2B interno o vendedor /
+  supervisor de la retail) ve solo las empresas que tiene asignadas; la
+  gestión (admin, gerente y oficina B2B) ve todas y asigna desde
+  "Empresa" (migración 0129).
+- Neumáticos: cada uno tiene serial propio (`numero`, lo pone la base);
+  la marca a fuego es opcional y se repite. Las facturas de neumáticos
+  de SAREGO las carga el personal asignado y el cliente las recibe
+  (`src/components/facturas.tsx`). Las invitaciones pasan por la Edge Function
   `flota-invitar` del repo retail.
 - Base local: `src/lib/datos.ts` (IndexedDB + cola de cambios +
   sincronización completa). Los cálculos están en `src/lib/calculos.ts`

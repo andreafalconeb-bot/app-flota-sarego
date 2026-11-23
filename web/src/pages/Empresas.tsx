@@ -74,7 +74,11 @@ function ListaSarego() {
       <div className="titulo-pagina">
         <div>
           <h1>Empresas cliente</h1>
-          <div className="sec chico">Todas las flotas que usan la app. SAREGO ve y puede cargar en todas.</div>
+          <div className="sec chico">
+            {yo?.esGestion
+              ? 'Todas las flotas que usan la app. Asigna cada empresa a sus ingenieros y vendedores desde “Empresa”.'
+              : 'Las empresas que tienes asignadas. Si falta alguna, pídele al administrador que te la asigne.'}
+          </div>
         </div>
         <button className="primario" onClick={() => setNueva(true)}>+ Nueva empresa</button>
       </div>
@@ -89,7 +93,7 @@ function ListaSarego() {
       {cargando ? (
         <Cargando />
       ) : lista.length === 0 ? (
-        <Vacio>Todavía no hay empresas. Crea la primera con “Nueva empresa”.</Vacio>
+        <Vacio>{yo?.esGestion ? 'Todavía no hay empresas. Crea la primera con “Nueva empresa”.' : 'No tienes empresas asignadas. Crea una con “Nueva empresa” o pídele al administrador que te asigne.'}</Vacio>
       ) : (
         <div className="tarjeta tabla-wrap" style={{ padding: 0 }}>
           <table>
@@ -110,7 +114,10 @@ function ListaSarego() {
                     <b>{e.nombre}</b>
                     <div className="sec chico">{e.rif ?? ''} {e.sucursal ? '· ' + etiqueta(SUCURSALES, e.sucursal) : ''}</div>
                   </td>
-                  <td>{e.plan === 'pago' ? <Pill tono="ok">Completa</Pill> : <Pill>Gratis</Pill>} {!e.activa && <Pill tono="critico">Inactiva</Pill>}</td>
+                  <td>
+                    {e.plan === 'pago' ? <Pill tono="ok">Completa</Pill> : <Pill>Gratis</Pill>} {!e.activa && <Pill tono="critico">Inactiva</Pill>}{' '}
+                    {(e.facturas_por_recibir ?? 0) > 0 && <Pill tono="alerta">{e.facturas_por_recibir} facturas por recibir</Pill>}
+                  </td>
                   <td className="num">{e.activos}{e.plan === 'gratis' ? ` / ${e.max_activos}` : ''}</td>
                   <td className="num">{e.usuarios}</td>
                   <td>

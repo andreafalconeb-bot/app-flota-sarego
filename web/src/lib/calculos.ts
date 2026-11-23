@@ -323,6 +323,42 @@ export function estadoProfundidad(mm: number | null): EstadoMedida {
   return 'ok'
 }
 
+/**
+ * Marcas a fuego para cargar varios neumáticos iguales de una vez. La
+ * marca a fuego es opcional y se puede repetir (Andrea, 23/nov/2026):
+ *  * vacía: todos sin marca (se distinguen por su serial);
+ *  * termina en número: en serie, respetando los ceros (TG001 x 3 =
+ *    TG001, TG002, TG003);
+ *  * sin número al final: la misma en todos.
+ */
+export function marcasParaLote(inicio: string, cantidad: number): (string | null)[] {
+  const marca = inicio.trim().toUpperCase()
+  const n = Math.max(1, Math.floor(cantidad))
+  if (!marca) return Array(n).fill(null)
+  const m = /^(.*?)(\d+)$/.exec(marca)
+  if (!m || n === 1) return Array(n).fill(marca)
+  const [, prefijo, numero] = m
+  const desde = parseInt(numero, 10)
+  return Array.from({ length: n }, (_, i) => prefijo + String(desde + i).padStart(numero.length, '0'))
+}
+
+/**
+ * Datos técnicos de un caucho del catálogo de SAREGO (articulos_erp,
+ * línea CAUCHOS) a partir de su nombre: "275/70R22.5 PR16 HS205 (DIREC)
+ * TERRAKING RIN/Otros: 22.5" → medida 275/70R22.5, modelo "PR16 HS205
+ * (DIREC) TERRAKING". La marca es la categoría, salvo "VARIAS MARCAS".
+ */
+export function datosCaucho(a: { nombre: string; categoria: string | null }): { marca: string | null; medida: string | null; modelo: string | null } {
+  const limpio = a.nombre.replace(/RIN\/Otros:.*$/i, '').replace(/\s+/g, ' ').trim()
+  const m = /^((?:LT)?[\d.]+(?:X[\d.]+)?(?:R|-|\/)[\d.R/]+(?:\s?LT)?)\s*(.*)$/i.exec(limpio)
+  const medida = m ? m[1].replace(/\s/g, '').toUpperCase() : null
+  let modelo = (m ? m[2] : limpio).trim()
+  const cat = (a.categoria ?? '').trim()
+  const marca = cat && !/VARIAS/i.test(cat) ? cat : null
+  if (marca && modelo.toUpperCase().endsWith(marca.toUpperCase())) modelo = modelo.slice(0, -marca.length).trim()
+  return { marca, medida, modelo: modelo || null }
+}
+
 export function minimo(valores: (number | null | undefined)[]): number | null {
   const v = valores.filter((x): x is number => x != null && !isNaN(x))
   return v.length ? Math.min(...v) : null

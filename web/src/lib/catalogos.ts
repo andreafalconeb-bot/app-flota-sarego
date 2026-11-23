@@ -112,7 +112,7 @@ export const CUENTAS: Mapa = {
 
 export const TIPOS_COSTO: Mapa = { repuesto: 'Repuesto', mano_obra: 'Mano de obra', servicio: 'Servicio de taller', otro: 'Otro' }
 
-export const ESTADOS_NEUMATICO: Mapa = { inventario: 'En inventario', montado: 'Montado', reparacion: 'En reparación', desecho: 'Desechado' }
+export const ESTADOS_NEUMATICO: Mapa = { por_recibir: 'Facturado, por recibir', inventario: 'En inventario', montado: 'Montado', reparacion: 'En reparación', desecho: 'Desechado' }
 
 export const VALVULAS: Mapa = { ok: 'Bien', sin_tapa: 'Sin tapa', danada: 'Dañada', extension_floja: 'Extensión floja' }
 

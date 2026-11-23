@@ -2,8 +2,9 @@
 // que escribe primero en la base local y sube a la nube cuando puede.
 import { useState } from 'react'
 import { useEmpresa } from '../lib/empresa'
-import { hoyISO } from '../lib/formato'
+import { hoyISO, nombreNeumatico, serialNeumatico } from '../lib/formato'
 import { ADITIVOS, COMBUSTIBLES, COMPONENTES, CUENTAS, MEDIDORES, TIPOS_COSTO, TIPOS_SERVICIO, compartimientosSugeridos } from '../lib/catalogos'
+import { marcasParaLote } from '../lib/calculos'
 import { plantillaPorTipo } from '../lib/ejes'
 import { SelectorEjes, SelectorTipo } from './dibujos'
 import type { Activo, Carga, Compartimiento, Costo, Neumatico, Servicio } from '../lib/tipos'
@@ -719,8 +720,10 @@ export function FormCosto({ activoId, abierto, onCerrar }: { activoId?: string; 
 // ------------------------------------------------------------
 // Neumático nuevo
 // ------------------------------------------------------------
+const MAX_LOTE = 100
+
 export function FormNeumatico({ neumatico, abierto, onCerrar }: { neumatico?: Neumatico; abierto: boolean; onCerrar: () => void }) {
-  const { guardar, datos } = useEmpresa()
+  const { guardar, rol } = useEmpresa()
   const [f, setF] = useState(() => ({
     marca_fuego: neumatico?.marca_fuego ?? '',
     marca: neumatico?.marca ?? '',
@@ -733,73 +736,103 @@ export function FormNeumatico({ neumatico, abierto, onCerrar }: { neumatico?: Ne
     fecha_compra: neumatico?.fecha_compra ?? '',
     notas: neumatico?.notas ?? '',
   }))
+  // Compra de varios iguales: una sola carga (Andrea, 23/nov/2026)
+  const [cantidad, setCantidad] = useState('1')
   const { error, enviando, enviar } = useEnvio(onCerrar)
+  const cant = neumatico ? 1 : Math.max(1, Math.floor(num(cantidad) ?? 1))
+  const marcas = marcasParaLote(f.marca_fuego, cant)
+  // Lo facturado por SAREGO lo cambia SAREGO hasta que el cliente lo recibe
+  const bloqueado = neumatico?.estado === 'por_recibir' && rol !== 'sarego'
 
   return (
     <Modal
       abierto={abierto}
-      titulo={neumatico ? `Neumático ${neumatico.marca_fuego}` : 'Nuevo neumático'}
+      titulo={neumatico ? `Neumático ${nombreNeumatico(neumatico)}` : 'Nuevo neumático'}
       onCerrar={onCerrar}
       pie={
-        <Pie
-          onCerrar={onCerrar}
-          enviando={enviando}
-          onGuardar={() =>
-            void enviar(async () => {
-              const marca = f.marca_fuego.trim().toUpperCase()
-              if (!marca) return 'Falta la marca a fuego.'
-              if (datos.neumaticos.some((n) => n.marca_fuego === marca && n.id !== neumatico?.id)) return 'Ya hay un neumático con esa marca a fuego.'
-              const fila: Partial<Neumatico> = {
-                ...(neumatico ?? { estado: 'inventario', activo_id: null, posicion: null, montado_at: null, km_montaje: null, horas_montaje: null }),
-                marca_fuego: marca,
-                marca: f.marca.trim() || null,
-                modelo: f.modelo.trim() || null,
-                medida: f.medida.trim() || null,
-                dot: f.dot.trim() || null,
-                profundidad_inicial_mm: num(f.profundidad_inicial_mm),
-                presion_ideal_psi: num(f.presion_ideal_psi),
-                costo: num(f.costo),
-                fecha_compra: f.fecha_compra || null,
-                notas: f.notas.trim() || null,
-              }
-              await guardar('neumaticos', fila)
-            })
-          }
-        />
+        bloqueado ? undefined : (
+          <Pie
+            onCerrar={onCerrar}
+            enviando={enviando}
+            texto={cant > 1 ? `Guardar ${cant} neumáticos` : 'Guardar'}
+            onGuardar={() =>
+              void enviar(async () => {
+                if (cant > MAX_LOTE) return `Se pueden cargar hasta ${MAX_LOTE} neumáticos de una vez.`
+                const comun: Partial<Neumatico> = {
+                  ...(neumatico ?? { estado: 'inventario', activo_id: null, posicion: null, montado_at: null, km_montaje: null, horas_montaje: null }),
+                  marca: f.marca.trim() || null,
+                  modelo: f.modelo.trim() || null,
+                  medida: f.medida.trim() || null,
+                  dot: f.dot.trim() || null,
+                  profundidad_inicial_mm: num(f.profundidad_inicial_mm),
+                  presion_ideal_psi: num(f.presion_ideal_psi),
+                  costo: num(f.costo),
+                  fecha_compra: f.fecha_compra || null,
+                  notas: f.notas.trim() || null,
+                }
+                for (const marca of marcas) await guardar('neumaticos', { ...comun, marca_fuego: marca })
+              })
+            }
+          />
+        )
       }
     >
-      <div className="grid grid-2">
-        <Campo etiqueta="Marca a fuego (letras y números)">
-          <input value={f.marca_fuego} onChange={(e) => setF({ ...f, marca_fuego: e.target.value })} style={{ textTransform: 'uppercase' }} />
+      {neumatico && (
+        <div className="fila chico">
+          <span>Serial <b className="mono">{serialNeumatico(neumatico)}</b></span>
+          {neumatico.estado === 'por_recibir' && <span className="pill alerta">Facturado por SAREGO, por recibir</span>}
+        </div>
+      )}
+      {bloqueado && <div className="aviso alerta">Este neumático viene en una factura de SAREGO. Recibe la factura en Neumáticos para pasarlo a tu inventario.</div>}
+      <fieldset disabled={bloqueado} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }} className="pila">
+        <div className="grid grid-2">
+          {!neumatico && (
+            <Campo etiqueta="Cantidad (neumáticos iguales de la misma compra)">
+              <input inputMode="numeric" value={cantidad} onChange={(e) => setCantidad(e.target.value.replace(/\D/g, ''))} />
+            </Campo>
+          )}
+          <Campo etiqueta={cant > 1 ? 'Marca a fuego del primero (opcional)' : 'Marca a fuego (opcional)'}>
+            <input value={f.marca_fuego} onChange={(e) => setF({ ...f, marca_fuego: e.target.value })} style={{ textTransform: 'uppercase' }} placeholder={cant > 1 ? 'Ej.: TG001' : undefined} />
+          </Campo>
+          {cant > 1 && (
+            <div className="aviso chico ancho-completo">
+              Se cargan {cant} neumáticos con los mismos datos, cada uno con su serial.{' '}
+              {marcas[0] == null
+                ? 'Sin marca a fuego.'
+                : marcas[0] === marcas[cant - 1]
+                  ? `Todos con la marca ${marcas[0]}.`
+                  : `Marcas ${marcas[0]} a ${marcas[cant - 1]}.`}
+            </div>
+          )}
+          <Campo etiqueta="DOT">
+            <input value={f.dot} onChange={(e) => setF({ ...f, dot: e.target.value })} placeholder="Ej.: 3524 (semana 35 de 2024)" />
+          </Campo>
+          <Campo etiqueta="Marca">
+            <input value={f.marca} onChange={(e) => setF({ ...f, marca: e.target.value })} />
+          </Campo>
+          <Campo etiqueta="Modelo / diseño">
+            <input value={f.modelo} onChange={(e) => setF({ ...f, modelo: e.target.value })} />
+          </Campo>
+          <Campo etiqueta="Medida">
+            <input value={f.medida} onChange={(e) => setF({ ...f, medida: e.target.value })} placeholder="Ej.: 11R22.5" />
+          </Campo>
+          <Campo etiqueta="Profundidad nueva (mm)">
+            <input inputMode="decimal" value={f.profundidad_inicial_mm} onChange={(e) => setF({ ...f, profundidad_inicial_mm: e.target.value })} />
+          </Campo>
+          <Campo etiqueta="Presión ideal (psi)">
+            <input inputMode="decimal" value={f.presion_ideal_psi} onChange={(e) => setF({ ...f, presion_ideal_psi: e.target.value })} />
+          </Campo>
+          <Campo etiqueta={cant > 1 ? 'Costo por neumático (US$)' : 'Costo (US$)'}>
+            <input inputMode="decimal" value={f.costo} onChange={(e) => setF({ ...f, costo: e.target.value })} />
+          </Campo>
+          <Campo etiqueta="Fecha de compra">
+            <input type="date" value={f.fecha_compra} max={hoyISO()} onChange={(e) => setF({ ...f, fecha_compra: e.target.value })} />
+          </Campo>
+        </div>
+        <Campo etiqueta="Notas">
+          <input value={f.notas} onChange={(e) => setF({ ...f, notas: e.target.value })} />
         </Campo>
-        <Campo etiqueta="DOT">
-          <input value={f.dot} onChange={(e) => setF({ ...f, dot: e.target.value })} placeholder="Ej.: 3524 (semana 35 de 2024)" />
-        </Campo>
-        <Campo etiqueta="Marca">
-          <input value={f.marca} onChange={(e) => setF({ ...f, marca: e.target.value })} />
-        </Campo>
-        <Campo etiqueta="Modelo / diseño">
-          <input value={f.modelo} onChange={(e) => setF({ ...f, modelo: e.target.value })} />
-        </Campo>
-        <Campo etiqueta="Medida">
-          <input value={f.medida} onChange={(e) => setF({ ...f, medida: e.target.value })} placeholder="Ej.: 11R22.5" />
-        </Campo>
-        <Campo etiqueta="Profundidad nueva (mm)">
-          <input inputMode="decimal" value={f.profundidad_inicial_mm} onChange={(e) => setF({ ...f, profundidad_inicial_mm: e.target.value })} />
-        </Campo>
-        <Campo etiqueta="Presión ideal (psi)">
-          <input inputMode="decimal" value={f.presion_ideal_psi} onChange={(e) => setF({ ...f, presion_ideal_psi: e.target.value })} />
-        </Campo>
-        <Campo etiqueta="Costo (US$)">
-          <input inputMode="decimal" value={f.costo} onChange={(e) => setF({ ...f, costo: e.target.value })} />
-        </Campo>
-        <Campo etiqueta="Fecha de compra">
-          <input type="date" value={f.fecha_compra} max={hoyISO()} onChange={(e) => setF({ ...f, fecha_compra: e.target.value })} />
-        </Campo>
-      </div>
-      <Campo etiqueta="Notas">
-        <input value={f.notas} onChange={(e) => setF({ ...f, notas: e.target.value })} />
-      </Campo>
+      </fieldset>
       <ErrorMsg error={error} />
     </Modal>
   )

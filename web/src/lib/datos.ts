@@ -52,6 +52,8 @@ function db() {
 // Columnas que calcula la base y no se envían
 const NO_ENVIAR: Partial<Record<Coleccion, string[]>> = {
   servicios: ['costo_total'],
+  // El serial lo pone la base
+  neumaticos: ['numero'],
 }
 
 const oyentes = new Set<() => void>()

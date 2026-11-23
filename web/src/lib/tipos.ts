@@ -27,6 +27,7 @@ export interface EmpresaEstado extends Empresa {
   usuarios: number
   dias_sin_sincronizar: number | null
   estado_sincronizacion: 'ok' | 'aviso' | 'bloqueada'
+  facturas_por_recibir?: number
 }
 
 export interface Membresia {
@@ -157,10 +158,28 @@ export interface Costo extends Base {
   registrado_por?: string | null
 }
 
-export type EstadoNeumatico = 'inventario' | 'montado' | 'reparacion' | 'desecho'
+export type EstadoNeumatico = 'por_recibir' | 'inventario' | 'montado' | 'reparacion' | 'desecho'
+
+/** Factura de neumáticos que SAREGO le vende al cliente (migración 0129). */
+export interface Factura extends Base {
+  numero: string
+  fecha: string
+  estado: 'por_recibir' | 'recibida' | 'anulada'
+  notas: string | null
+  cargada_por?: string | null
+  recibida_por?: string | null
+  recibida_at?: string | null
+  nota_recepcion?: string | null
+}
 
 export interface Neumatico extends Base {
-  marca_fuego: string
+  /** Serial propio, consecutivo por empresa; lo pone la base (null hasta subir a la nube) */
+  numero?: number | null
+  /** Marca a fuego: opcional y se puede repetir */
+  marca_fuego: string | null
+  /** Factura de SAREGO de donde vino, y código del artículo en el ERP */
+  factura_id?: string | null
+  articulo_codigo?: string | null
   marca: string | null
   modelo: string | null
   medida: string | null
@@ -224,6 +243,7 @@ export interface Datos {
   servicios: Servicio[]
   combustible: Carga[]
   costos: Costo[]
+  facturas: Factura[]
   neumaticos: Neumatico[]
   movimientos: Movimiento[]
   inspecciones: Inspeccion[]
@@ -240,6 +260,7 @@ export const TABLAS: Record<Coleccion, string> = {
   servicios: 'flota_servicios',
   combustible: 'flota_combustible',
   costos: 'flota_costos',
+  facturas: 'flota_facturas',
   neumaticos: 'flota_neumaticos',
   movimientos: 'flota_neumatico_movimientos',
   inspecciones: 'flota_inspecciones',
@@ -249,12 +270,12 @@ export const TABLAS: Record<Coleccion, string> = {
 /** Orden de subida y bajada: primero lo que otras tablas referencian. */
 export const ORDEN_COLECCIONES: Coleccion[] = [
   'sitios', 'activos', 'lecturas', 'compartimientos', 'servicios', 'combustible',
-  'costos', 'neumaticos', 'movimientos', 'inspecciones', 'inspeccionNeumaticos',
+  'costos', 'facturas', 'neumaticos', 'movimientos', 'inspecciones', 'inspeccionNeumaticos',
 ]
 
 export function datosVacios(): Datos {
   return {
     sitios: [], activos: [], lecturas: [], compartimientos: [], servicios: [], combustible: [],
-    costos: [], neumaticos: [], movimientos: [], inspecciones: [], inspeccionNeumaticos: [],
+    costos: [], facturas: [], neumaticos: [], movimientos: [], inspecciones: [], inspeccionNeumaticos: [],
   }
 }
