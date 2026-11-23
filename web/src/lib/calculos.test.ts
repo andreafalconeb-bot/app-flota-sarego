@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
+import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
 import { aplicar } from './datos'
 import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type Servicio } from './tipos'
 
@@ -235,5 +235,21 @@ describe('resumenInventario', () => {
     ])
     expect(r[1].total).toMatchObject({ nuevo: 1, usado: 1, renovado: 1, total: 3 })
     expect(r[0].marcas[0].marca).toBe('Sin marca')
+  })
+})
+
+describe('profundidadMaxima', () => {
+  it('la de compra, o la de la última banda renovada', () => {
+    const movs = [
+      { neumatico_id: 'n1', tipo: 'reparacion', fecha: '2026-05-01', profundidad_mm: 15, motivo: 'Banda renovada (1ª vez)' },
+      { neumatico_id: 'n1', tipo: 'desmontaje', fecha: '2026-09-01', profundidad_mm: 8, motivo: null },
+    ]
+    expect(profundidadMaxima({ id: 'n1', profundidad_inicial_mm: 17 }, movs)).toBe(17)
+    expect(profundidadMaxima({ id: 'n1', profundidad_inicial_mm: 17, renovaciones: 1 }, movs)).toBe(15)
+  })
+  it('error si una ranura pasa la máxima', () => {
+    expect(errorProfundidad([14, 15, null], 14)).toMatch(/No puede pasar de 14 mm/)
+    expect(errorProfundidad([14, 12], 14)).toBeNull()
+    expect(errorProfundidad([20], null)).toBeNull()
   })
 })

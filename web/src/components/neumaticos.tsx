@@ -4,10 +4,11 @@ import { useMemo, useState } from 'react'
 import { useEmpresa } from '../lib/empresa'
 import { hoyISO, fecha, nombreNeumatico, serialNeumatico } from '../lib/formato'
 import { PLANTILLAS, nombrePosicion, posicionesDe } from '../lib/ejes'
-import { condicionNeumatico, estadoPresion, estadoProfundidad, minimo, type CondicionNeumatico, type EstadoMedida } from '../lib/calculos'
+import { condicionNeumatico, errorProfundidad, profundidadMaxima, estadoPresion, estadoProfundidad, minimo, type CondicionNeumatico, type EstadoMedida } from '../lib/calculos'
 import type { Activo, InspeccionNeumatico, Neumatico } from '../lib/tipos'
 import { InspeccionGrafica, type FilaInspeccion } from './inspeccionGrafica'
-import { Campo, ErrorMsg, Modal, Pill, Selector, Vacio, mensajeError, num } from './ui'
+import { LeyendaEstados, PlantaVehiculo, type Celda } from './planta'
+import { Campo, ErrorMsg, Modal, Selector, Vacio, mensajeError, num } from './ui'
 
 
 /** Última medición de cada posición del activo. */
@@ -58,23 +59,19 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
     return <Vacio>Este activo no lleva neumáticos (cámbialo en “Datos” si no es así).</Vacio>
   }
 
-  const Llanta = ({ pos }: { pos: string }) => {
+  const celda = (pos: string): Celda => {
     const n = montados.get(pos)
+    if (!n) return { estado: null, ayuda: `${nombrePosicion(pos)}: vacía, toca para montar` }
     const m = medidas.get(pos)
     const ep = m ? estadoPresion(m.presion_psi, m.presion_ideal_psi) : 'sin_dato'
     const ed = m ? estadoProfundidad(m.profundidad_min_mm) : 'sin_dato'
-    const peor: EstadoMedida = [ep, ed].includes('critico') ? 'critico' : [ep, ed].includes('alerta') ? 'alerta' : n ? 'ok' : 'sin_dato'
-    return (
-      <button className={'llanta ' + (n ? peor : 'vacia')} onClick={() => setPosicion(pos)} title={nombrePosicion(pos)}>
-        <span className="mono">{pos}</span>
-        <b>{n ? nombreNeumatico(n) : '—'}</b>
-        {m && (
-          <span className="chico">
-            {m.presion_psi ?? '–'} psi · {m.profundidad_min_mm ?? '–'} mm
-          </span>
-        )}
-      </button>
-    )
+    const peor: EstadoMedida = [ep, ed].includes('critico') ? 'critico' : [ep, ed].includes('alerta') ? 'alerta' : m ? 'ok' : 'sin_dato'
+    return {
+      estado: peor,
+      titulo: nombreNeumatico(n),
+      detalle: m ? <>{m.presion_psi ?? '–'} psi<br />{m.profundidad_min_mm ?? '–'} mm</> : <span className="sec">sin medir</span>,
+      ayuda: `${nombrePosicion(pos)} · ${nombreNeumatico(n)}`,
+    }
   }
 
   return (
@@ -85,30 +82,8 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
           <button className="primario" onClick={() => setInspeccionar(true)}>Inspección de presión y profundidad</button>
         )}
       </div>
-      <div className="ejes">
-        <div className="planta">
-          <div className="cabina">Frente</div>
-          {plantilla.ejes.map((eje) => (
-            <div key={eje.nombre} className="eje">
-              <span className="sec chico">{eje.nombre}</span>
-              <div className="fila-eje">
-                {eje.posiciones.slice(0, eje.posiciones.length / 2).map((p) => <Llanta key={p} pos={p} />)}
-                <span className="barra" />
-                {eje.posiciones.slice(eje.posiciones.length / 2).map((p) => <Llanta key={p} pos={p} />)}
-              </div>
-            </div>
-          ))}
-        </div>
-        {plantilla.repuesto && (
-          <div className="eje">
-            <span className="sec chico">Repuesto</span>
-            <div className="fila-eje"><Llanta pos="R" /></div>
-          </div>
-        )}
-      </div>
-      <div className="fila chico sec">
-        <Pill tono="ok">Bien</Pill> <Pill tono="alerta">Presión ±10 % o ≤ 5 mm</Pill> <Pill tono="critico">Presión ±20 % o ≤ 3 mm</Pill>
-      </div>
+      <PlantaVehiculo configuracion={activo.configuracion} celda={celda} onElegir={setPosicion} />
+      <LeyendaEstados />
       {posicion && <Posicion key={posicion} activo={activo} posicion={posicion} montado={montados.get(posicion) ?? null} onCerrar={() => setPosicion(null)} />}
       {inspeccionar && <Inspeccion activo={activo} montados={montados} onCerrar={() => setInspeccionar(false)} />}
     </div>
@@ -141,6 +116,10 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
     setEnviando(true)
     setError(null)
     try {
+      if (montado && accion !== 'montar') {
+        const e = errorProfundidad([num(profundidad)], profundidadMaxima(montado, datos.movimientos))
+        if (e) throw new Error(e)
+      }
       if (accion === 'montar') {
         const n = datos.neumaticos.find((x) => x.id === elegido)
         if (!n) throw new Error('Elige el neumático.')
@@ -287,7 +266,7 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
 
 
 function Inspeccion({ activo, montados, onCerrar }: { activo: Activo; montados: Map<string, Neumatico>; onCerrar: () => void }) {
-  const { guardar } = useEmpresa()
+  const { guardar, datos } = useEmpresa()
   const posiciones = posicionesDe(activo.configuracion).filter((p) => montados.has(p))
   const [filas, setFilas] = useState<Record<string, FilaInspeccion>>(() =>
     Object.fromEntries(posiciones.map((p) => [p, { presion: '', p1: '', p2: '', p3: '', valvula: 'ok', observacion: '' }])),
@@ -305,6 +284,10 @@ function Inspeccion({ activo, montados, onCerrar }: { activo: Activo; montados: 
     try {
       const conDatos = posiciones.filter((p) => filas[p].presion || filas[p].p1 || filas[p].p2 || filas[p].p3)
       if (!conDatos.length) throw new Error('Anota al menos una presión o profundidad.')
+      for (const p of conDatos) {
+        const e = errorProfundidad([num(filas[p].p1), num(filas[p].p2), num(filas[p].p3)], profundidadMaxima(montados.get(p)!, datos.movimientos))
+        if (e) throw new Error(`${nombrePosicion(p)}: ${e}`)
+      }
       const inspeccionId = await guardar('inspecciones', {
         activo_id: activo.id,
         fecha: new Date().toISOString(),
@@ -357,7 +340,7 @@ function Inspeccion({ activo, montados, onCerrar }: { activo: Activo; montados: 
           <Campo etiqueta="Horómetro (h)"><input inputMode="decimal" value={horas} onChange={(e) => setHoras(e.target.value)} /></Campo>
         )}
       </div>
-      <InspeccionGrafica activo={activo} montados={montados} posiciones={posiciones} filas={filas} set={set} />
+      <InspeccionGrafica activo={activo} montados={montados} posiciones={posiciones} filas={filas} set={set} maxima={(n) => profundidadMaxima(n, datos.movimientos)} />
       <Campo etiqueta="Notas"><input value={notas} onChange={(e) => setNotas(e.target.value)} /></Campo>
       <ErrorMsg error={error} />
     </Modal>
