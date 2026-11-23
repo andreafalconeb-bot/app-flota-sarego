@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
+import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
 import { aplicar } from './datos'
 import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type Servicio } from './tipos'
 
@@ -197,5 +197,22 @@ describe('datosCaucho', () => {
     expect(datosCaucho({ nombre: '7.50-16 10L CONVENCIONAL DIR', categoria: 'VARIAS MARCAS' }).medida).toBe('7.50-16')
     expect(datosCaucho({ nombre: 'LT315/70R17 121/118R LRD FR GRABBER X3 GENERAL TIRE', categoria: 'GENERAL TIRE' }).medida).toBe('LT315/70R17')
     expect(datosCaucho({ nombre: '31X10.50R15LT 109R DESTINATION A/T FIRESTONE', categoria: 'FIRESTONE' }).medida).toBe('31X10.50R15LT')
+  })
+})
+
+describe('condicionNeumatico', () => {
+  const n = { id: 'n1', profundidad_inicial_mm: 17 }
+  it('nuevo: nunca montado, con la profundidad de compra', () => {
+    expect(condicionNeumatico(n, [], [])).toMatchObject({ nuevo: true, mm: 17, origen: 'compra' })
+  })
+  it('usado: toma la última profundidad medida, de movimiento o inspección', () => {
+    const movs = [
+      { neumatico_id: 'n1', tipo: 'montaje', fecha: '2026-01-10', profundidad_mm: 17, activo_id: 'a1' },
+      { neumatico_id: 'n1', tipo: 'desmontaje', fecha: '2026-09-01', profundidad_mm: 11, activo_id: 'a1' },
+    ]
+    expect(condicionNeumatico(n, movs, [{ neumatico_id: 'n1', fecha: '2026-06-01T10:00:00Z', profundidad_min_mm: 13 }]))
+      .toMatchObject({ nuevo: false, mm: 11, origen: 'movimiento', activoId: 'a1' })
+    expect(condicionNeumatico(n, movs.slice(0, 1), [{ neumatico_id: 'n1', fecha: '2026-06-01T10:00:00Z', profundidad_min_mm: 13 }]))
+      .toMatchObject({ nuevo: false, mm: 13, origen: 'inspeccion' })
   })
 })

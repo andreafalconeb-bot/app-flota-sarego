@@ -5,7 +5,7 @@ import { useEmpresa } from '../lib/empresa'
 import { hoyISO, fecha, nombreNeumatico, serialNeumatico } from '../lib/formato'
 import { PLANTILLAS, nombrePosicion, posicionesDe } from '../lib/ejes'
 import { VALVULAS } from '../lib/catalogos'
-import { desviacionPresion, estadoPresion, estadoProfundidad, minimo, type EstadoMedida } from '../lib/calculos'
+import { condicionNeumatico, desviacionPresion, estadoPresion, estadoProfundidad, minimo, type CondicionNeumatico, type EstadoMedida } from '../lib/calculos'
 import type { Activo, InspeccionNeumatico, Neumatico } from '../lib/tipos'
 import { Campo, ErrorMsg, Modal, Pill, Selector, Vacio, mensajeError, num } from './ui'
 
@@ -21,6 +21,27 @@ export function ultimasMediciones(activoId: string, d: ReturnType<typeof useEmpr
     }
   }
   return mapa
+}
+
+/** Profundidades medidas en inspecciones, con su fecha. */
+function medidasConFecha(d: ReturnType<typeof useEmpresa>['datos']) {
+  const fechas = new Map(d.inspecciones.map((i) => [i.id, i.fecha]))
+  return d.inspeccionNeumaticos.map((m) => ({ neumatico_id: m.neumatico_id, profundidad_min_mm: m.profundidad_min_mm, fecha: fechas.get(m.inspeccion_id) ?? '' }))
+}
+
+/** Condición (nuevo o usado, con su profundidad) de cada neumático. */
+export function condiciones(d: ReturnType<typeof useEmpresa>['datos']): Map<string, CondicionNeumatico> {
+  const medidas = medidasConFecha(d)
+  return new Map(d.neumaticos.map((n) => [n.id, condicionNeumatico(n, d.movimientos, medidas)]))
+}
+
+/** "Nuevo · 17 mm" o "Usado · 11 mm (desmontado de TG010 el 20/11/2026)". */
+export function textoCondicion(c: CondicionNeumatico, activos: { id: string; codigo: string }[]): string {
+  const mm = c.mm != null ? ` · ${c.mm} mm` : ' · sin profundidad'
+  if (c.nuevo) return `Nuevo${mm}`
+  const de = c.activoId ? activos.find((a) => a.id === c.activoId)?.codigo : null
+  const cuando = c.fecha ? ` el ${fecha(c.fecha.slice(0, 10))}` : ''
+  return `Usado${mm}${c.origen === 'inspeccion' ? ` (inspección${cuando})` : de ? ` (desmontado de ${de}${cuando})` : cuando ? ` (medido${cuando})` : ''}`
 }
 
 export function NeumaticosActivo({ activo }: { activo: Activo }) {
@@ -105,7 +126,12 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
   const [motivo, setMotivo] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
-  const disponibles = datos.neumaticos.filter((n) => n.estado === 'inventario')
+  const conds = useMemo(() => condiciones(datos), [datos])
+  // Primero los nuevos, después los usados con más banda
+  const disponibles = datos.neumaticos
+    .filter((n) => n.estado === 'inventario')
+    .sort((a, b) => Number(conds.get(b.id)?.nuevo) - Number(conds.get(a.id)?.nuevo) || (conds.get(b.id)?.mm ?? 0) - (conds.get(a.id)?.mm ?? 0))
+  const condElegido = elegido ? conds.get(elegido) : undefined
   const posiciones = posicionesDe(activo.configuracion).filter((p) => p !== posicion)
   const ocupado = (p: string) => datos.neumaticos.find((n) => n.activo_id === activo.id && n.estado === 'montado' && n.posicion === p)
   const historial = montado ? datos.movimientos.filter((m) => m.neumatico_id === montado.id).sort((a, b) => b.fecha.localeCompare(a.fecha)) : []
@@ -120,7 +146,9 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
         const n = datos.neumaticos.find((x) => x.id === elegido)
         if (!n) throw new Error('Elige el neumático.')
         await guardar('neumaticos', { ...n, estado: 'montado', activo_id: activo.id, posicion, montado_at: hoyISO(), km_montaje: activo.km_actual, horas_montaje: activo.horas_actual })
-        await guardar('movimientos', { ...base, neumatico_id: n.id, tipo: 'montaje', activo_id: activo.id, posicion, posicion_anterior: null })
+        // La profundidad al montar sale del inventario: la de compra si es
+        // nuevo, la última medida si es usado (no se pregunta)
+        await guardar('movimientos', { ...base, profundidad_mm: conds.get(n.id)?.mm ?? null, neumatico_id: n.id, tipo: 'montaje', activo_id: activo.id, posicion, posicion_anterior: null })
       } else if (accion === 'desmontar' && montado) {
         await guardar('neumaticos', { ...montado, estado: estadoFinal, activo_id: null, posicion: null })
         await guardar('movimientos', {
@@ -203,14 +231,26 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
           )}
           {accion === 'montar' &&
             (disponibles.length ? (
-              <Campo etiqueta="Neumático del inventario">
-                <Selector
-                  valor={elegido}
-                  onCambio={setElegido}
-                  opciones={Object.fromEntries(disponibles.map((n) => [n.id, `${nombreNeumatico(n)}${n.marca_fuego ? ` (${serialNeumatico(n)})` : ''} · ${n.marca ?? ''} ${n.medida ?? ''} · DOT ${n.dot ?? '—'}`]))}
-                  vacio="Elige…"
-                />
-              </Campo>
+              <>
+                <Campo etiqueta="Neumático del inventario">
+                  <Selector
+                    valor={elegido}
+                    onCambio={setElegido}
+                    opciones={Object.fromEntries(
+                      disponibles.map((n) => {
+                        const c = conds.get(n.id)!
+                        return [n.id, `${c.nuevo ? 'NUEVO' : 'USADO'} ${c.mm != null ? c.mm + ' mm' : ''} · ${nombreNeumatico(n)}${n.marca_fuego ? ` (${serialNeumatico(n)})` : ''} · ${n.marca ?? ''} ${n.medida ?? ''} · DOT ${n.dot ?? '—'}`]
+                      }),
+                    )}
+                    vacio="Elige…"
+                  />
+                </Campo>
+                {condElegido && (
+                  <div className={'aviso chico' + (condElegido.nuevo ? ' ok' : '')}>
+                    {textoCondicion(condElegido, datos.activos)}. Esa es la profundidad con que se monta.
+                  </div>
+                )}
+              </>
             ) : (
               <div className="aviso alerta">No hay neumáticos en inventario. Regístralos primero en la pestaña Neumáticos.</div>
             ))}
@@ -230,9 +270,11 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
             </Campo>
           )}
           <div className="grid grid-2">
-            <Campo etiqueta="Profundidad medida (mm)">
-              <input inputMode="decimal" value={profundidad} onChange={(e) => setProfundidad(e.target.value)} />
-            </Campo>
+            {accion !== 'montar' && (
+              <Campo etiqueta={accion === 'desmontar' ? 'Profundidad al desmontar (mm)' : 'Profundidad medida (mm)'}>
+                <input inputMode="decimal" value={profundidad} onChange={(e) => setProfundidad(e.target.value)} />
+              </Campo>
+            )}
             <Campo etiqueta="Motivo">
               <input value={motivo} onChange={(e) => setMotivo(e.target.value)} />
             </Campo>
