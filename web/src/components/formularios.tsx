@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { useEmpresa } from '../lib/empresa'
 import { hoyISO } from '../lib/formato'
-import { ADITIVOS, COMBUSTIBLES, COMPONENTES, CUENTAS, GRUPOS_TIPO, MEDIDORES, TIPOS_COSTO, TIPOS_SERVICIO, compartimientosSugeridos } from '../lib/catalogos'
-import { PLANTILLAS, plantillaPorTipo } from '../lib/ejes'
+import { ADITIVOS, COMBUSTIBLES, COMPONENTES, CUENTAS, MEDIDORES, TIPOS_COSTO, TIPOS_SERVICIO, compartimientosSugeridos } from '../lib/catalogos'
+import { plantillaPorTipo } from '../lib/ejes'
+import { SelectorEjes, SelectorTipo } from './dibujos'
 import type { Activo, Carga, Compartimiento, Costo, Neumatico, Servicio } from '../lib/tipos'
 import { Campo, ErrorMsg, Modal, Selector, mensajeError, num } from './ui'
 
@@ -231,17 +232,10 @@ export function FormActivo({ activo, abierto, onCerrar, onCreado }: {
         <Campo etiqueta="Número de unidad">
           <input value={f.codigo} onChange={(e) => setF({ ...f, codigo: e.target.value })} placeholder="Ej.: U-014" />
         </Campo>
-        <Campo etiqueta="Tipo">
-          <select value={f.tipo} onChange={(e) => cambiarTipo(e.target.value)}>
-            {GRUPOS_TIPO.map((g) => (
-              <optgroup key={g.grupo} label={g.grupo}>
-                {Object.entries(g.tipos).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </Campo>
+        <div className="campo ancho-completo" role="group" aria-label="Tipo">
+          <span>Tipo</span>
+          <SelectorTipo valor={f.tipo} onCambio={cambiarTipo} />
+        </div>
         <Campo etiqueta="Marca">
           <input value={f.marca} onChange={(e) => setF({ ...f, marca: e.target.value })} />
         </Campo>
@@ -263,9 +257,10 @@ export function FormActivo({ activo, abierto, onCerrar, onCreado }: {
         <Campo etiqueta="Medidor">
           <Selector valor={f.medidor} onCambio={(v) => setF({ ...f, medidor: v as Activo['medidor'] })} opciones={MEDIDORES} />
         </Campo>
-        <Campo etiqueta="Ejes y neumáticos">
-          <Selector valor={f.configuracion} onCambio={(v) => setF({ ...f, configuracion: v })} opciones={Object.fromEntries(Object.entries(PLANTILLAS).map(([k, p]) => [k, p.nombre]))} />
-        </Campo>
+        <div className="campo ancho-completo" role="group" aria-label="Ejes y neumáticos">
+          <span>Ejes y neumáticos (visto desde arriba, el frente arriba)</span>
+          <SelectorEjes valor={f.configuracion ?? 'ninguna'} onCambio={(v) => setF({ ...f, configuracion: v })} />
+        </div>
         {datos.sitios.length > 0 && (
           <Campo etiqueta="Sede">
             <Selector valor={f.sitio_id} onCambio={(v) => setF({ ...f, sitio_id: v })} opciones={Object.fromEntries(datos.sitios.map((s) => [s.id, s.nombre]))} vacio="Sin sede" />

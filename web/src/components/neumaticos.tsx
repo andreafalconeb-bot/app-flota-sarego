@@ -66,16 +66,19 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
         )}
       </div>
       <div className="ejes">
-        {plantilla.ejes.map((eje) => (
-          <div key={eje.nombre} className="eje">
-            <span className="sec chico">{eje.nombre}</span>
-            <div className="fila-eje">
-              {eje.posiciones.slice(0, eje.posiciones.length / 2).map((p) => <Llanta key={p} pos={p} />)}
-              <span className="barra" />
-              {eje.posiciones.slice(eje.posiciones.length / 2).map((p) => <Llanta key={p} pos={p} />)}
+        <div className="planta">
+          <div className="cabina">Frente</div>
+          {plantilla.ejes.map((eje) => (
+            <div key={eje.nombre} className="eje">
+              <span className="sec chico">{eje.nombre}</span>
+              <div className="fila-eje">
+                {eje.posiciones.slice(0, eje.posiciones.length / 2).map((p) => <Llanta key={p} pos={p} />)}
+                <span className="barra" />
+                {eje.posiciones.slice(eje.posiciones.length / 2).map((p) => <Llanta key={p} pos={p} />)}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
         {plantilla.repuesto && (
           <div className="eje">
             <span className="sec chico">Repuesto</span>
