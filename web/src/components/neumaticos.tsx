@@ -4,12 +4,11 @@ import { useMemo, useState } from 'react'
 import { useEmpresa } from '../lib/empresa'
 import { hoyISO, fecha, nombreNeumatico, serialNeumatico } from '../lib/formato'
 import { PLANTILLAS, nombrePosicion, posicionesDe } from '../lib/ejes'
-import { VALVULAS } from '../lib/catalogos'
-import { condicionNeumatico, desviacionPresion, estadoPresion, estadoProfundidad, minimo, type CondicionNeumatico, type EstadoMedida } from '../lib/calculos'
+import { condicionNeumatico, estadoPresion, estadoProfundidad, minimo, type CondicionNeumatico, type EstadoMedida } from '../lib/calculos'
 import type { Activo, InspeccionNeumatico, Neumatico } from '../lib/tipos'
+import { InspeccionGrafica, type FilaInspeccion } from './inspeccionGrafica'
 import { Campo, ErrorMsg, Modal, Pill, Selector, Vacio, mensajeError, num } from './ui'
 
-const TONO: Record<EstadoMedida, 'ok' | 'alerta' | 'critico' | undefined> = { ok: 'ok', alerta: 'alerta', critico: 'critico', sin_dato: undefined }
 
 /** Última medición de cada posición del activo. */
 export function ultimasMediciones(activoId: string, d: ReturnType<typeof useEmpresa>['datos']): Map<string, InspeccionNeumatico & { fecha: string }> {
@@ -286,14 +285,6 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
   )
 }
 
-interface FilaInspeccion {
-  presion: string
-  p1: string
-  p2: string
-  p3: string
-  valvula: string
-  observacion: string
-}
 
 function Inspeccion({ activo, montados, onCerrar }: { activo: Activo; montados: Map<string, Neumatico>; onCerrar: () => void }) {
   const { guardar } = useEmpresa()
@@ -306,7 +297,7 @@ function Inspeccion({ activo, montados, onCerrar }: { activo: Activo; montados: 
   const [notas, setNotas] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
-  const set = (p: string, k: keyof FilaInspeccion, v: string) => setFilas({ ...filas, [p]: { ...filas[p], [k]: v } })
+  const set = (p: string, k: keyof FilaInspeccion, v: string) => setFilas((fs) => ({ ...fs, [p]: { ...fs[p], [k]: v } }))
 
   const guardarTodo = async () => {
     setEnviando(true)
@@ -349,6 +340,7 @@ function Inspeccion({ activo, montados, onCerrar }: { activo: Activo; montados: 
     <Modal
       abierto
       titulo={`Inspección de neumáticos — ${activo.codigo}`}
+      ancho="grande"
       onCerrar={onCerrar}
       pie={
         <>
@@ -365,44 +357,7 @@ function Inspeccion({ activo, montados, onCerrar }: { activo: Activo; montados: 
           <Campo etiqueta="Horómetro (h)"><input inputMode="decimal" value={horas} onChange={(e) => setHoras(e.target.value)} /></Campo>
         )}
       </div>
-      <p className="sec chico" style={{ margin: 0 }}>Presión en frío (psi) y profundidad de banda en hasta 3 ranuras (mm).</p>
-      <div className="tabla-wrap">
-        <table>
-          <thead>
-            <tr><th>Posición</th><th>Presión</th><th>Ranuras (mm)</th><th>Válvula</th></tr>
-          </thead>
-          <tbody>
-            {posiciones.map((p) => {
-              const n = montados.get(p)!
-              const f = filas[p]
-              const d = desviacionPresion(num(f.presion), n.presion_ideal_psi)
-              const ep = estadoPresion(num(f.presion), n.presion_ideal_psi)
-              return (
-                <tr key={p}>
-                  <td>
-                    <b className="mono">{p}</b> <span className="mono chico">{nombreNeumatico(n)}</span>
-                    <div className="sec chico">ideal {n.presion_ideal_psi ?? '—'} psi</div>
-                  </td>
-                  <td style={{ minWidth: 90 }}>
-                    <input inputMode="decimal" aria-label={`Presión ${p}`} value={f.presion} onChange={(e) => set(p, 'presion', e.target.value)} />
-                    {d != null && <Pill tono={TONO[ep]}>{d > 0 ? '+' : ''}{Math.round(d * 100)} %</Pill>}
-                  </td>
-                  <td>
-                    <div className="fila" style={{ flexWrap: 'nowrap', gap: 4 }}>
-                      {(['p1', 'p2', 'p3'] as const).map((k) => (
-                        <input key={k} inputMode="decimal" aria-label={`Ranura ${k.slice(1)} ${p}`} style={{ width: 56 }} value={f[k]} onChange={(e) => set(p, k, e.target.value)} />
-                      ))}
-                    </div>
-                  </td>
-                  <td style={{ minWidth: 120 }}>
-                    <Selector valor={f.valvula} onCambio={(v) => set(p, 'valvula', v)} opciones={VALVULAS} />
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      <InspeccionGrafica activo={activo} montados={montados} posiciones={posiciones} filas={filas} set={set} />
       <Campo etiqueta="Notas"><input value={notas} onChange={(e) => setNotas(e.target.value)} /></Campo>
       <ErrorMsg error={error} />
     </Modal>

@@ -1,0 +1,329 @@
+// Inspección de presión y profundidad, gráfica (Andrea, 23/nov/2026: "la
+// inspección de las presiones la quiero gráfica y con gráfico
+// profesional"). Arriba la planta del vehículo con cada neumático
+// coloreado por su estado; abajo, el neumático elegido con un manómetro
+// (presión contra la ideal, bandas de la curva TMC: ±10 % alerta, ±20 %
+// crítico) y el perfil de la banda (3 ranuras contra la profundidad de
+// nuevo, con las líneas de 5 mm y 3 mm). Cada estado lleva su texto; el
+// color nunca va solo.
+import { useMemo, useRef, useState } from 'react'
+import { PLANTILLAS, nombrePosicion } from '../lib/ejes'
+import { VALVULAS } from '../lib/catalogos'
+import { desviacionPresion, estadoPresion, estadoProfundidad, minimo, type EstadoMedida } from '../lib/calculos'
+import { nombreNeumatico } from '../lib/formato'
+import type { Activo, Neumatico } from '../lib/tipos'
+import { num } from './ui'
+
+export interface FilaInspeccion {
+  presion: string
+  p1: string
+  p2: string
+  p3: string
+  valvula: string
+  observacion: string
+}
+
+const COLOR: Record<EstadoMedida, string> = {
+  ok: 'var(--ok)',
+  alerta: 'var(--alerta)',
+  critico: 'var(--critico)',
+  sin_dato: 'var(--texto-2)',
+}
+const SUAVE: Record<EstadoMedida, string> = {
+  ok: 'var(--ok-suave)',
+  alerta: 'var(--alerta-suave)',
+  critico: 'var(--critico-suave)',
+  sin_dato: 'var(--superficie)',
+}
+const TEXTO_PRESION: Record<EstadoMedida, string> = { ok: 'Bien', alerta: 'Revisar', critico: 'Crítica', sin_dato: 'Sin medir' }
+const TEXTO_BANDA: Record<EstadoMedida, string> = { ok: 'Bien', alerta: 'Planificar cambio', critico: 'Retirar', sin_dato: 'Sin medir' }
+
+const peor = (a: EstadoMedida, b: EstadoMedida): EstadoMedida =>
+  [a, b].includes('critico') ? 'critico' : [a, b].includes('alerta') ? 'alerta' : [a, b].includes('ok') ? 'ok' : 'sin_dato'
+
+function medida(f: FilaInspeccion, n: Neumatico) {
+  const presion = num(f.presion)
+  const ranuras = [num(f.p1), num(f.p2), num(f.p3)]
+  const mm = minimo(ranuras)
+  const ep = estadoPresion(presion, n.presion_ideal_psi)
+  const ed = estadoProfundidad(mm)
+  return { presion, ranuras, mm, ep, ed, d: desviacionPresion(presion, n.presion_ideal_psi), estado: peor(ep, ed) }
+}
+
+// ------------------------------------------------------------
+// Manómetro: arco de 240°, de 0 a 1,5 × la presión ideal
+// ------------------------------------------------------------
+function Manometro({ presion, ideal }: { presion: number | null; ideal: number | null }) {
+  const max = ideal ? ideal * 1.5 : 150
+  const R = 80
+  const C = { x: 100, y: 100 }
+  const A0 = 150 // grados: el arco va de 150° a 390° (240°)
+  const ang = (v: number) => A0 + (Math.max(0, Math.min(v, max)) / max) * 240
+  const punto = (a: number, r = R) => ({ x: C.x + r * Math.cos((a * Math.PI) / 180), y: C.y + r * Math.sin((a * Math.PI) / 180) })
+  const arco = (v1: number, v2: number) => {
+    const p1 = punto(ang(v1))
+    const p2 = punto(ang(v2))
+    const grande = ang(v2) - ang(v1) > 180 ? 1 : 0
+    return `M ${p1.x} ${p1.y} A ${R} ${R} 0 ${grande} 1 ${p2.x} ${p2.y}`
+  }
+  const bandas: { de: number; a: number; e: EstadoMedida }[] = ideal
+    ? [
+        { de: 0, a: ideal * 0.8, e: 'critico' },
+        { de: ideal * 0.8, a: ideal * 0.9, e: 'alerta' },
+        { de: ideal * 0.9, a: ideal * 1.1, e: 'ok' },
+        { de: ideal * 1.1, a: ideal * 1.2, e: 'alerta' },
+        { de: ideal * 1.2, a: max, e: 'critico' },
+      ]
+    : [{ de: 0, a: max, e: 'sin_dato' }]
+  const marcas = Array.from({ length: 7 }, (_, i) => (max / 6) * i)
+  const estado = estadoPresion(presion, ideal)
+  const d = desviacionPresion(presion, ideal)
+  const aguja = presion != null ? punto(ang(presion), R - 14) : null
+  return (
+    <svg viewBox="0 0 200 200" className="manometro" role="img" aria-label={`Presión ${presion ?? 'sin medir'} psi, ideal ${ideal ?? '—'} psi`}>
+      <circle cx={C.x} cy={C.y} r={R + 12} fill="var(--superficie-2)" stroke="var(--borde)" />
+      {bandas.map((b) => (
+        <path key={b.de} d={arco(b.de, b.a)} fill="none" stroke={COLOR[b.e]} strokeWidth="12" opacity={b.e === 'sin_dato' ? 0.25 : 0.9} />
+      ))}
+      {marcas.map((m) => {
+        const a = punto(ang(m), R - 9)
+        const b = punto(ang(m), R - 16)
+        const t = punto(ang(m), R - 26)
+        return (
+          <g key={m}>
+            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--texto-2)" strokeWidth="1.5" />
+            <text x={t.x} y={t.y} fontSize="8.5" textAnchor="middle" dominantBaseline="middle" fill="var(--texto-2)">{Math.round(m)}</text>
+          </g>
+        )
+      })}
+      {ideal && (() => {
+        const a = punto(ang(ideal), R + 8)
+        const b = punto(ang(ideal), R - 8)
+        return <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--texto)" strokeWidth="2.5" strokeLinecap="round" />
+      })()}
+      {aguja && (
+        <>
+          <line x1={C.x} y1={C.y} x2={aguja.x} y2={aguja.y} stroke={COLOR[estado]} strokeWidth="3.5" strokeLinecap="round" />
+        </>
+      )}
+      <circle cx={C.x} cy={C.y} r="7" fill="var(--superficie)" stroke="var(--texto)" strokeWidth="2" />
+      <text x={C.x} y={C.y + 32} textAnchor="middle" fontSize="24" fontWeight="700" fill="var(--texto)" fontFamily="var(--f-mono)">
+        {presion ?? '—'}
+      </text>
+      <text x={C.x} y={C.y + 47} textAnchor="middle" fontSize="9.5" fill="var(--texto-2)">
+        psi · ideal {ideal ?? '—'}
+      </text>
+      <text x={C.x} y={C.y + 64} textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--texto)">
+        {d != null ? `${d > 0 ? '+' : ''}${Math.round(d * 100)} % · ${TEXTO_PRESION[estado]}` : ideal ? 'Anota la presión' : 'Sin presión ideal'}
+      </text>
+    </svg>
+  )
+}
+
+// ------------------------------------------------------------
+// Perfil de banda: 3 ranuras contra la profundidad de nuevo
+// ------------------------------------------------------------
+function PerfilBanda({ ranuras, nuevo }: { ranuras: (number | null)[]; nuevo: number | null }) {
+  const tope = Math.max(nuevo ?? 0, ...ranuras.map((r) => r ?? 0), 10)
+  const H = 110
+  const y = (mm: number) => 14 + H - (Math.min(mm, tope) / tope) * H
+  const ancho = 34
+  const xs = [42, 89, 136]
+  return (
+    <svg viewBox="0 0 200 172" className="perfil-banda" role="img" aria-label={`Ranuras ${ranuras.map((r) => r ?? '—').join(', ')} mm`}>
+      {/* carcasa */}
+      <rect x="14" y={y(0)} width="150" height="12" rx="3" fill="var(--texto-2)" opacity="0.35" />
+      {/* líneas de 5 y 3 mm, y la de nuevo */}
+      {[
+        { mm: 5, t: '5 mm', c: 'var(--alerta)' },
+        { mm: 3, t: '3 mm', c: 'var(--critico)' },
+      ].map((l) => (
+        <g key={l.mm}>
+          <line x1="14" x2="164" y1={y(l.mm)} y2={y(l.mm)} stroke={l.c} strokeDasharray="4 3" strokeWidth="1.2" />
+          <text x="167" y={y(l.mm)} fontSize="8.5" dominantBaseline="middle" fill="var(--texto-2)">{l.t}</text>
+        </g>
+      ))}
+      {nuevo != null && (
+        <g>
+          <line x1="14" x2="164" y1={y(nuevo)} y2={y(nuevo)} stroke="var(--texto-2)" strokeWidth="1" />
+          <text x="167" y={y(nuevo)} fontSize="8.5" dominantBaseline="middle" fill="var(--texto-2)">nuevo</text>
+        </g>
+      )}
+      {xs.map((x, i) => {
+        const mm = ranuras[i]
+        const e = estadoProfundidad(mm)
+        return (
+          <g key={x}>
+            {mm != null ? (
+              <rect x={x - ancho / 2} y={y(mm)} width={ancho} height={y(0) - y(mm)} rx="4" fill={COLOR[e]} opacity="0.85" />
+            ) : (
+              <rect x={x - ancho / 2} y={y(tope * 0.6)} width={ancho} height={y(0) - y(tope * 0.6)} rx="4" fill="none" stroke="var(--borde)" strokeDasharray="3 3" />
+            )}
+            <text x={x} y={y(0) + 26} textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--texto)" fontFamily="var(--f-mono)">
+              {mm ?? '—'}
+            </text>
+            <text x={x} y={y(0) + 38} textAnchor="middle" fontSize="8" fill="var(--texto-2)">ranura {i + 1}</text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+// ------------------------------------------------------------
+// Planta del vehículo con cada neumático y su estado
+// ------------------------------------------------------------
+function PlantaInspeccion({ activo, montados, filas, elegida, onElegir }: {
+  activo: Activo
+  montados: Map<string, Neumatico>
+  filas: Record<string, FilaInspeccion>
+  elegida: string
+  onElegir: (p: string) => void
+}) {
+  const plantilla = PLANTILLAS[activo.configuracion ?? ''] ?? PLANTILLAS.ninguna
+  const Llanta = ({ pos }: { pos: string }) => {
+    const n = montados.get(pos)
+    if (!n) return <span className="llanta-insp vacia" title={`${nombrePosicion(pos)}: sin neumático`}>{pos}</span>
+    const m = medida(filas[pos], n)
+    return (
+      <button
+        type="button"
+        className={'llanta-insp' + (pos === elegida ? ' elegida' : '')}
+        style={{ borderColor: COLOR[m.estado], background: SUAVE[m.estado] }}
+        onClick={() => onElegir(pos)}
+        aria-pressed={pos === elegida}
+        title={`${nombrePosicion(pos)} · ${nombreNeumatico(n)}`}
+      >
+        <span className="mono pos">{pos}</span>
+        <b className="mono">{m.presion ?? '—'}</b>
+        <span className="chico">{m.mm != null ? `${m.mm} mm` : 'psi'}</span>
+      </button>
+    )
+  }
+  return (
+    <div className="ejes">
+      <div className="planta">
+        <div className="cabina">Frente</div>
+        {plantilla.ejes.map((eje) => (
+          <div key={eje.nombre} className="eje">
+            <span className="sec chico">{eje.nombre}</span>
+            <div className="fila-eje">
+              {eje.posiciones.slice(0, eje.posiciones.length / 2).map((p) => <Llanta key={p} pos={p} />)}
+              <span className="barra" />
+              {eje.posiciones.slice(eje.posiciones.length / 2).map((p) => <Llanta key={p} pos={p} />)}
+            </div>
+          </div>
+        ))}
+      </div>
+      {plantilla.repuesto && montados.has('R') && (
+        <div className="eje">
+          <span className="sec chico">Repuesto</span>
+          <div className="fila-eje"><Llanta pos="R" /></div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Planta + detalle del neumático elegido con manómetro y perfil de banda. */
+export function InspeccionGrafica({ activo, montados, posiciones, filas, set }: {
+  activo: Activo
+  montados: Map<string, Neumatico>
+  posiciones: string[]
+  filas: Record<string, FilaInspeccion>
+  set: (p: string, k: keyof FilaInspeccion, v: string) => void
+}) {
+  const [elegida, setElegida] = useState(posiciones[0] ?? '')
+  const refPresion = useRef<HTMLInputElement>(null)
+  const refs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)]
+  const n = montados.get(elegida)
+  const i = posiciones.indexOf(elegida)
+  const ir = (p: string) => {
+    setElegida(p)
+    setTimeout(() => refPresion.current?.focus(), 0)
+  }
+  const siguiente = () => i < posiciones.length - 1 && ir(posiciones[i + 1])
+
+  const resumen = useMemo(() => {
+    const ms = posiciones.map((p) => medida(filas[p], montados.get(p)!))
+    return {
+      medidas: ms.filter((m) => m.presion != null || m.mm != null).length,
+      criticas: ms.filter((m) => m.estado === 'critico').length,
+      alertas: ms.filter((m) => m.estado === 'alerta').length,
+    }
+  }, [posiciones, filas, montados])
+
+  if (!n) return null
+  const f = filas[elegida]
+  const m = medida(f, n)
+
+  return (
+    <div className="pila" style={{ gap: 12 }}>
+      <div className="fila chico">
+        <span><b>{resumen.medidas}</b> de {posiciones.length} medidos</span>
+        {resumen.criticas > 0 && <span className="pill critico">⚠ {resumen.criticas} críticos</span>}
+        {resumen.alertas > 0 && <span className="pill alerta">● {resumen.alertas} por revisar</span>}
+        <span className="sec">Toca un neumático en la planta para medirlo.</span>
+      </div>
+      <div className="insp-grid">
+        <PlantaInspeccion activo={activo} montados={montados} filas={filas} elegida={elegida} onElegir={ir} />
+        <div className="tarjeta pila insp-detalle">
+          <div className="fila-entre">
+            <div>
+              <b>{nombrePosicion(elegida)}</b>
+              <div className="sec chico mono">{nombreNeumatico(n)}{n.dot ? ` · DOT ${n.dot}` : ''}{n.medida ? ` · ${n.medida}` : ''}</div>
+            </div>
+            <span className="sec chico">{i + 1} / {posiciones.length}</span>
+          </div>
+          <div className="insp-medidas">
+            <div className="pila" style={{ gap: 6, alignItems: 'center' }}>
+              <Manometro presion={m.presion} ideal={n.presion_ideal_psi} />
+              <label className="campo" style={{ width: '100%' }}>
+                <span>Presión en frío (psi)</span>
+                <input
+                  ref={refPresion}
+                  className="entrada-grande"
+                  inputMode="decimal"
+                  value={f.presion}
+                  onChange={(e) => set(elegida, 'presion', e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && refs[0].current?.focus()}
+                />
+              </label>
+            </div>
+            <div className="pila" style={{ gap: 6, alignItems: 'center' }}>
+              <PerfilBanda ranuras={m.ranuras} nuevo={n.profundidad_inicial_mm} />
+              <div className="fila" style={{ flexWrap: 'nowrap', gap: 6, width: '100%' }}>
+                {(['p1', 'p2', 'p3'] as const).map((k, j) => (
+                  <label key={k} className="campo" style={{ flex: 1 }}>
+                    <span>Ranura {j + 1} · mm</span>
+                    <input
+                      ref={refs[j]}
+                      inputMode="decimal"
+                      value={f[k]}
+                      onChange={(e) => set(elegida, k, e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && (j < 2 ? refs[j + 1].current?.focus() : siguiente())}
+                    />
+                  </label>
+                ))}
+              </div>
+              <span className="chico">Banda: <b>{m.mm != null ? `${m.mm} mm` : '—'}</b> · {TEXTO_BANDA[m.ed]}</span>
+            </div>
+          </div>
+          <div className="fila" role="group" aria-label="Válvula">
+            <span className="chico sec">Válvula:</span>
+            {Object.entries(VALVULAS).map(([k, v]) => (
+              <button key={k} type="button" className={'chico' + (f.valvula === k ? ' primario' : '')} aria-pressed={f.valvula === k} onClick={() => set(elegida, 'valvula', k)}>
+                {v}
+              </button>
+            ))}
+          </div>
+          <input placeholder="Observación de este neumático (opcional)" value={f.observacion} onChange={(e) => set(elegida, 'observacion', e.target.value)} />
+          <div className="fila-entre">
+            <button type="button" disabled={i <= 0} onClick={() => ir(posiciones[i - 1])}>← Anterior</button>
+            <button type="button" className="primario" disabled={i >= posiciones.length - 1} onClick={siguiente}>Siguiente →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
