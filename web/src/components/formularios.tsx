@@ -783,7 +783,7 @@ export function FormNeumatico({ neumatico, abierto, onCerrar }: { neumatico?: Ne
           {neumatico.estado === 'por_recibir' && <span className="pill alerta">Facturado por SAREGO, por recibir</span>}
         </div>
       )}
-      {neumatico && !bloqueado && (neumatico.estado === 'inventario' || neumatico.estado === 'reparacion') && (
+      {neumatico && !bloqueado && (neumatico.estado === 'inventario' || neumatico.estado === 'reparacion' || neumatico.estado === 'renovacion') && (
         <RenovarBanda neumatico={neumatico} onListo={onCerrar} />
       )}
       {bloqueado && <div className="aviso alerta">Este neumático viene en una factura de SAREGO. Recibe la factura en Neumáticos para pasarlo a tu inventario.</div>}

@@ -112,7 +112,7 @@ export const CUENTAS: Mapa = {
 
 export const TIPOS_COSTO: Mapa = { repuesto: 'Repuesto', mano_obra: 'Mano de obra', servicio: 'Servicio de taller', otro: 'Otro' }
 
-export const ESTADOS_NEUMATICO: Mapa = { por_recibir: 'Facturado, por recibir', inventario: 'En inventario', montado: 'Montado', reparacion: 'En reparación', desecho: 'Desechado' }
+export const ESTADOS_NEUMATICO: Mapa = { por_recibir: 'Facturado, por recibir', inventario: 'En inventario', montado: 'Montado', reparacion: 'En reparación', renovacion: 'En renovación', desecho: 'Desechado' }
 
 export const VALVULAS: Mapa = { ok: 'Bien', sin_tapa: 'Sin tapa', danada: 'Dañada', extension_floja: 'Extensión floja' }
 
@@ -123,4 +123,14 @@ export const SUCURSALES: Mapa = { '01': 'Caracas', '02': 'Valencia', '03': 'Ciud
 export function etiqueta(m: Mapa, v: string | null | undefined): string {
   if (!v) return '—'
   return m[v] ?? v
+}
+
+/** Razones de desecho de un neumático (Andrea, 23/nov/2026). */
+export const RAZONES_DESECHO: Mapa = {
+  desgaste_completo: 'Desgaste completo',
+  falla_carcasa: 'Falla de carcasa',
+  mala_reparacion: 'Mala reparación que causó la falla de carcasa',
+  impacto_corte: 'Daño por impacto o corte',
+  baja_presion: 'Rodado con baja presión',
+  desgaste_irregular: 'Desgaste irregular',
 }

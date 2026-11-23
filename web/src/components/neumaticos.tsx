@@ -8,6 +8,7 @@ import { condicionNeumatico, errorProfundidad, profundidadMaxima, estadoPresion,
 import type { Activo, InspeccionNeumatico, Neumatico } from '../lib/tipos'
 import { InspeccionGrafica, type FilaInspeccion } from './inspeccionGrafica'
 import { LeyendaEstados, PlantaVehiculo, type Celda } from './planta'
+import { RAZONES_DESECHO } from '../lib/catalogos'
 import { Campo, ErrorMsg, Modal, Selector, Vacio, mensajeError, num } from './ui'
 
 
@@ -95,7 +96,8 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
   const [accion, setAccion] = useState<'montar' | 'desmontar' | 'rotar'>(montado ? 'desmontar' : 'montar')
   const [elegido, setElegido] = useState('')
   const [destino, setDestino] = useState('')
-  const [estadoFinal, setEstadoFinal] = useState<'inventario' | 'reparacion' | 'desecho'>('inventario')
+  const [estadoFinal, setEstadoFinal] = useState<'inventario' | 'reparacion' | 'renovacion' | 'desecho'>('inventario')
+  const [razon, setRazon] = useState('')
   const [profundidad, setProfundidad] = useState('')
   const [motivo, setMotivo] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -128,11 +130,17 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
         // nuevo, la última medida si es usado (no se pregunta)
         await guardar('movimientos', { ...base, profundidad_mm: conds.get(n.id)?.mm ?? null, neumatico_id: n.id, tipo: 'montaje', activo_id: activo.id, posicion, posicion_anterior: null })
       } else if (accion === 'desmontar' && montado) {
-        await guardar('neumaticos', { ...montado, estado: estadoFinal, activo_id: null, posicion: null })
+        // Al desincorporar es obligatoria la profundidad, salvo el desecho,
+        // que pide la razón (Andrea, 23/nov/2026)
+        const desecho = estadoFinal === 'desecho'
+        if (desecho && !razon) throw new Error('Elige la razón del desecho.')
+        if (!desecho && num(profundidad) == null) throw new Error('Anota la profundidad al desmontar: es obligatoria.')
+        await guardar('neumaticos', { ...montado, estado: estadoFinal, activo_id: null, posicion: null, razon_desecho: desecho ? razon : null })
         await guardar('movimientos', {
           ...base,
+          razon_desecho: desecho ? razon : null,
           neumatico_id: montado.id,
-          tipo: estadoFinal === 'desecho' ? 'desecho' : estadoFinal === 'reparacion' ? 'reparacion' : 'desmontaje',
+          tipo: desecho ? 'desecho' : estadoFinal === 'inventario' ? 'desmontaje' : estadoFinal,
           activo_id: activo.id,
           posicion: null,
           posicion_anterior: posicion,
@@ -234,7 +242,16 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
             ))}
           {accion === 'desmontar' && (
             <Campo etiqueta="Va a">
-              <Selector valor={estadoFinal} onCambio={(v) => setEstadoFinal(v as typeof estadoFinal)} opciones={{ inventario: 'Inventario', reparacion: 'Reparación', desecho: 'Desecho' }} />
+              <Selector
+                valor={estadoFinal}
+                onCambio={(v) => setEstadoFinal(v as typeof estadoFinal)}
+                opciones={{ inventario: 'Inventario', reparacion: 'Reparación', renovacion: 'Renovación (enviado a reencauchar)', desecho: 'Desecho' }}
+              />
+            </Campo>
+          )}
+          {accion === 'desmontar' && estadoFinal === 'desecho' && (
+            <Campo etiqueta="Razón del desecho (obligatoria)">
+              <Selector valor={razon} onCambio={setRazon} opciones={RAZONES_DESECHO} vacio="Elige…" />
             </Campo>
           )}
           {accion === 'rotar' && (
@@ -248,8 +265,8 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
             </Campo>
           )}
           <div className="grid grid-2">
-            {accion !== 'montar' && (
-              <Campo etiqueta={accion === 'desmontar' ? 'Profundidad al desmontar (mm)' : 'Profundidad medida (mm)'}>
+            {accion !== 'montar' && !(accion === 'desmontar' && estadoFinal === 'desecho') && (
+              <Campo etiqueta={accion === 'desmontar' ? 'Profundidad al desmontar (mm, obligatoria)' : 'Profundidad medida (mm)'}>
                 <input inputMode="decimal" value={profundidad} onChange={(e) => setProfundidad(e.target.value)} />
               </Campo>
             )}
