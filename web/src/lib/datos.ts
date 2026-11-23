@@ -132,6 +132,17 @@ export async function registrarCambio(c: Omit<Cambio, 'at' | 'n'>): Promise<Dato
   return datos
 }
 
+/** Junta en la copia local columnas que devolvió la base (en la misma transacción). */
+async function parcharCopia(empresa: string, coleccion: Coleccion, id: string, columnas: Record<string, unknown>) {
+  const tx = (await db()).transaction('copia', 'readwrite')
+  const guardado = (await tx.store.get(empresa)) as Datos | undefined
+  if (guardado) {
+    const lista = (guardado[coleccion] ?? []) as unknown as { id: string }[]
+    if (lista.some((f) => f.id === id)) await tx.store.put(aplicar({ ...datosVacios(), ...guardado }, { coleccion, op: 'upsert', id, fila: columnas }), empresa)
+  }
+  await tx.done
+}
+
 /** Cambio solo local, sin cola (lo que la base ya calcula sola). */
 export async function parcharLocal(empresa: string, coleccion: Coleccion, id: string, fila: Record<string, unknown>) {
   const datos = aplicar(await leerCopia(empresa), { coleccion, op: 'upsert', id, fila })
@@ -166,8 +177,18 @@ async function subirColaYa(empresa: string): Promise<{ enviados: number; rechaza
         error = (await supabase.from(tabla).delete().eq('id', c.id)).error
       } else {
         const fila = { ...c.fila, id: c.id, empresa_id: empresa }
-        for (const k of NO_ENVIAR[c.coleccion] ?? []) delete (fila as Record<string, unknown>)[k]
-        error = (await supabase.from(tabla).upsert(fila)).error
+        const calculadas = NO_ENVIAR[c.coleccion] ?? []
+        for (const k of calculadas) delete (fila as Record<string, unknown>)[k]
+        if (calculadas.length) {
+          // Lo que calcula la base (el serial del neumático, el total del
+          // servicio) vuelve enseguida a la copia local, sin esperar a la
+          // próxima sincronización completa
+          const r = await supabase.from(tabla).upsert(fila).select(calculadas.join(', ')).maybeSingle()
+          error = r.error
+          if (!r.error && r.data) await parcharCopia(empresa, c.coleccion, c.id, r.data as unknown as Record<string, unknown>)
+        } else {
+          error = (await supabase.from(tabla).upsert(fila)).error
+        }
       }
     } catch (e) {
       error = { message: e instanceof Error ? e.message : String(e) }

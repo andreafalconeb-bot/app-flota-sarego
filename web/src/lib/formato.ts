@@ -51,7 +51,7 @@ export function textoRestante(restante: number, u: 'km' | 'horas'): string {
 
 /** Serial propio del neumático (lo pone la base al subirlo a la nube). */
 export function serialNeumatico(n: { numero?: number | null }): string {
-  return n.numero != null ? `N-${String(n.numero).padStart(4, '0')}` : 'N-(por asignar)'
+  return n.numero != null ? `N-${String(n.numero).padStart(4, '0')}` : 'N-…(se asigna al sincronizar)'
 }
 
 /** Cómo se nombra un neumático: su marca a fuego o, si no tiene, su serial. */
