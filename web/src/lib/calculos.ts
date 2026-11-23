@@ -359,6 +359,40 @@ export function datosCaucho(a: { nombre: string; categoria: string | null }): { 
   return { marca, medida, modelo: modelo || null }
 }
 
+/**
+ * Condición de un neumático en inventario (Andrea, 23/nov/2026): al
+ * montarlo no se pregunta la profundidad, se toma de lo que ya se sabe.
+ *  * Nuevo: nunca se ha montado; su profundidad es la de compra.
+ *  * Usado: ya se montó alguna vez; su profundidad es la última medida
+ *    (al desmontarlo, en una rotación o en una inspección).
+ */
+export interface CondicionNeumatico {
+  nuevo: boolean
+  mm: number | null
+  fecha: string | null
+  origen: 'compra' | 'movimiento' | 'inspeccion' | null
+  /** Activo del que se desmontó por última vez */
+  activoId: string | null
+}
+
+export function condicionNeumatico(
+  n: { id: string; profundidad_inicial_mm: number | null },
+  movimientos: { neumatico_id: string; tipo: string; fecha: string; profundidad_mm: number | null; activo_id: string | null }[],
+  medidas: { neumatico_id: string | null; fecha: string; profundidad_min_mm: number | null }[],
+): CondicionNeumatico {
+  const suyos = movimientos.filter((m) => m.neumatico_id === n.id)
+  const nuevo = !suyos.some((m) => m.tipo === 'montaje')
+  const ultimoDesmontaje = suyos.filter((m) => m.tipo !== 'montaje' && m.tipo !== 'rotacion').sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
+  type Lectura = { mm: number; fecha: string; origen: 'movimiento' | 'inspeccion' }
+  const lecturas: Lectura[] = [
+    ...suyos.filter((m) => m.profundidad_mm != null).map((m) => ({ mm: m.profundidad_mm!, fecha: m.fecha, origen: 'movimiento' as const })),
+    ...medidas.filter((x) => x.neumatico_id === n.id && x.profundidad_min_mm != null).map((x) => ({ mm: x.profundidad_min_mm!, fecha: x.fecha, origen: 'inspeccion' as const })),
+  ].sort((a, b) => b.fecha.localeCompare(a.fecha))
+  const ultima = lecturas[0]
+  if (ultima) return { nuevo, mm: ultima.mm, fecha: ultima.fecha, origen: ultima.origen, activoId: ultimoDesmontaje?.activo_id ?? null }
+  return { nuevo, mm: n.profundidad_inicial_mm, fecha: null, origen: n.profundidad_inicial_mm != null ? 'compra' : null, activoId: ultimoDesmontaje?.activo_id ?? null }
+}
+
 export function minimo(valores: (number | null | undefined)[]): number | null {
   const v = valores.filter((x): x is number => x != null && !isNaN(x))
   return v.length ? Math.min(...v) : null
