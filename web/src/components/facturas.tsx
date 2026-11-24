@@ -28,12 +28,13 @@ interface Linea {
   presion: string
   indice: string
   construccion: '' | 'tubeless' | 'tube_type'
+  pmax: string
 }
 
 let siguiente = 1
 const lineaVacia = (): Linea => ({
   clave: siguiente++, articulo_codigo: '', descripcion: '', marca: '', modelo: '', medida: '',
-  cantidad: '1', costo: '', dot: '', profundidad: '', presion: '', indice: '', construccion: '',
+  cantidad: '1', costo: '', dot: '', profundidad: '', presion: '', indice: '', construccion: '', pmax: '',
 })
 
 interface Articulo {
@@ -167,6 +168,7 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
             medida: d.medida ?? '',
             modelo: d.modelo ?? '',
             indice: d.indice ?? buscarMedida(d.medida)?.indice ?? '',
+            pmax: buscarMedida(d.medida)?.presionMax ? String(buscarMedida(d.medida)!.presionMax) : '',
             construccion: d.construccion ?? construccionProbable(d.medida) ?? '',
             cantidad: String(unidades),
             costo: unidades > 0 && valor > 0 ? String(Math.round((valor / unidades) * 100) / 100) : '',
@@ -188,6 +190,8 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
     const validas = lineas.filter((l) => (num(l.cantidad) ?? 0) > 0)
     if (!validas.length) return setError('Agrega al menos un neumático con su cantidad.')
     if (validas.some((l) => !l.medida.trim())) return setError('Cada línea necesita la medida.')
+    if (validas.some((l) => num(l.profundidad) == null)) return setError('Cada línea necesita la profundidad nueva (mm): al montarlos ya no se pregunta.')
+    if (validas.some((l) => num(l.pmax) == null)) return setError('Cada línea necesita la presión máxima del costado (psi).')
     if (unidades > MAX_UNIDADES) return setError(`Se pueden cargar hasta ${MAX_UNIDADES} neumáticos por factura.`)
     setEnviando(true)
     try {
@@ -200,7 +204,7 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
             dot: l.dot.trim() || null, profundidad_inicial_mm: num(l.profundidad), presion_ideal_psi: num(l.presion),
             costo: num(l.costo), fecha_compra: dia, notas: `Factura SAREGO ${n}`,
             indice_carga: l.indice.trim() || null, construccion: l.construccion || null,
-            presion_max_psi: buscarMedida(l.medida)?.presionMax ?? null,
+            presion_max_psi: num(l.pmax),
             activo_id: null, posicion: null, montado_at: null, km_montaje: null, horas_montaje: null,
           } as Partial<Neumatico>)
         }
@@ -279,7 +283,8 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
               const precio = Number(a.precio_a_la_fecha)
               cambiar(l.clave, {
                 articulo_codigo: a.codigo, descripcion: a.nombre, marca: d.marca ?? '', medida: d.medida ?? '', modelo: d.modelo ?? '',
-                indice: d.indice ?? buscarMedida(d.medida)?.indice ?? '', construccion: d.construccion ?? construccionProbable(d.medida) ?? '',
+                indice: d.indice ?? buscarMedida(d.medida)?.indice ?? '',
+            pmax: buscarMedida(d.medida)?.presionMax ? String(buscarMedida(d.medida)!.presionMax) : '', construccion: d.construccion ?? construccionProbable(d.medida) ?? '',
                 costo: precio > 0 ? String(precio) : l.costo,
               })
             }}
@@ -299,6 +304,7 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
             <Campo etiqueta="DOT"><input value={l.dot} onChange={(e) => cambiar(l.clave, { dot: e.target.value })} placeholder="Ej.: 3524" /></Campo>
             <Campo etiqueta="Cantidad"><input inputMode="numeric" value={l.cantidad} onChange={(e) => cambiar(l.clave, { cantidad: e.target.value.replace(/\D/g, '') })} /></Campo>
             <Campo etiqueta="Precio por neumático (US$)"><input inputMode="decimal" value={l.costo} onChange={(e) => cambiar(l.clave, { costo: e.target.value })} /></Campo>
+            <Campo etiqueta="Presión máx. costado (psi)"><input inputMode="numeric" value={l.pmax} onChange={(e) => cambiar(l.clave, { pmax: e.target.value })} /></Campo>
             <Campo etiqueta="Profundidad nueva (mm)"><input inputMode="decimal" value={l.profundidad} onChange={(e) => cambiar(l.clave, { profundidad: e.target.value })} /></Campo>
             <Campo etiqueta="Presión ideal (psi)"><input inputMode="decimal" value={l.presion} onChange={(e) => cambiar(l.clave, { presion: e.target.value })} /></Campo>
           </div>
