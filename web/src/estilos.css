@@ -302,3 +302,9 @@ dialog.modal::backdrop { background: rgb(10 20 26 / .45); }
 .fluido-lista .fluido-otro { border-top: 1px solid var(--borde); border-radius: 0; color: var(--acento); font-weight: 600; }
 .fluido-elegido { justify-content: flex-start; text-align: left; width: 100%; }
 .en-uso { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* Historial de inspecciones */
+.insp-hist { border: 1px solid var(--borde); border-radius: var(--radio); padding: 8px 12px; }
+.insp-hist + .insp-hist { margin-top: 6px; }
+.insp-hist > summary { cursor: pointer; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; list-style: revert; }
+.insp-hist[open] > summary { margin-bottom: 8px; }
