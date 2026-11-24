@@ -192,6 +192,12 @@ export interface Neumatico extends Base {
   /** Veces que se le renovó la banda (0 = original); el serial de la carcasa no cambia */
   renovaciones?: number
   razon_desecho?: string | null
+  /** Construcción y capacidad de carga (0137): lo que define al neumático */
+  construccion?: 'tubeless' | 'tube_type' | null
+  indice_carga?: string | null
+  /** Número de lonas (desaconsejado: mejor el índice de carga) */
+  lonas?: number | null
+  presion_max_psi?: number | null
   marca: string | null
   modelo: string | null
   medida: string | null

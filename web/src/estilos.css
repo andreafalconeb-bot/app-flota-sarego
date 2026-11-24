@@ -329,3 +329,7 @@ dialog.modal::backdrop { background: rgb(10 20 26 / .45); }
 .calc-eje { flex-basis: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding-top: 8px; border-top: 1px dashed var(--borde); cursor: default; }
 .calc-eje .sugerida, .calc-eje > span { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 @media (max-width: 480px) { .calc-eje { grid-template-columns: 1fr; } }
+
+/* Medida y capacidad de carga */
+.cortinas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; padding: 10px; border-radius: var(--radio); background: var(--superficie-2); border-left: 3px solid var(--acento); }
+.chips-indices { gap: 4px; margin-top: 2px; }

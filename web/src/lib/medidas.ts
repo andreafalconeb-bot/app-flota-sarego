@@ -84,3 +84,32 @@ export function buscarMedida(texto: string | null | undefined): Medida | null {
 
 /** Lista de sugerencias para un <input list="medidas-comunes">. */
 export const ID_LISTA_MEDIDAS = 'medidas-comunes'
+
+/** Medida tal como viene del ERP (flota_medidas_erp, migración 0137). */
+export interface MedidaErp {
+  medida: string
+  tipos: string[]
+  indices: string[]
+  lonas: string[]
+  tubeless: boolean
+  tube_type: boolean
+  articulos: number
+}
+
+/**
+ * Construcción probable según la medida: radiales de rin 17.5 / 19.5 /
+ * 22.5 / 24.5 suelen ser tubeless; rin 20, 16 y convencionales (con "-")
+ * suelen llevar cámara. Solo es la propuesta inicial.
+ */
+export function construccionProbable(medida: string | null | undefined): 'tubeless' | 'tube_type' | null {
+  const m = (medida ?? '').toUpperCase().replace(/\s/g, '')
+  if (!m) return null
+  if (/R(17\.5|19\.5|22\.5|24\.5)$/.test(m)) return 'tubeless'
+  if (/-\d/.test(m) || /R(20|16)$/.test(m)) return 'tube_type'
+  return null
+}
+
+export const CONSTRUCCIONES: Record<'tubeless' | 'tube_type', string> = {
+  tubeless: 'Tubeless (sin cámara)',
+  tube_type: 'Tube type (con cámara)',
+}
