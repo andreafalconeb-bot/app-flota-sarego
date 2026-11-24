@@ -119,6 +119,20 @@ interface LineaErp {
   valor_neto: number | null
 }
 
+/**
+ * Profundidad nueva y presión máxima ya anotadas antes para el mismo
+ * artículo (o la misma medida e índice): se piden una sola vez por tipo
+ * de caucho (Andrea, 24/nov/2026).
+ */
+function recordados(neumaticos: Neumatico[], codigo: string | null, medida: string | null, indice: string | null): { profundidad: string; pmax: string } {
+  const mismo = neumaticos
+    .filter((n) => (codigo && n.articulo_codigo === codigo) || (!!medida && n.medida === medida && (!indice || n.indice_carga === indice)))
+    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+  const prof = mismo.find((n) => n.profundidad_inicial_mm != null)?.profundidad_inicial_mm
+  const pmax = mismo.find((n) => n.presion_max_psi != null)?.presion_max_psi
+  return { profundidad: prof != null ? String(prof) : '', pmax: pmax != null ? String(pmax) : '' }
+}
+
 /** Carga de una factura de SAREGO con sus neumáticos (solo personal de SAREGO). */
 export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
   const { datos, guardar, empresa } = useEmpresa()
@@ -160,6 +174,8 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
           const d = datosCaucho({ nombre: f.articulo_nombre ?? '', categoria: f.categoria })
           const unidades = Math.round(Number(f.unidades))
           const valor = Number(f.valor_neto ?? 0)
+          const indice = d.indice ?? buscarMedida(d.medida)?.indice ?? ''
+          const antes = recordados(datos.neumaticos, f.articulo_codigo, d.medida, indice || null)
           return {
             ...lineaVacia(),
             articulo_codigo: f.articulo_codigo ?? '',
@@ -167,8 +183,9 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
             marca: d.marca ?? '',
             medida: d.medida ?? '',
             modelo: d.modelo ?? '',
-            indice: d.indice ?? buscarMedida(d.medida)?.indice ?? '',
-            pmax: buscarMedida(d.medida)?.presionMax ? String(buscarMedida(d.medida)!.presionMax) : '',
+            indice,
+            pmax: antes.pmax || (buscarMedida(d.medida)?.presionMax ? String(buscarMedida(d.medida)!.presionMax) : ''),
+            profundidad: antes.profundidad,
             construccion: d.construccion ?? construccionProbable(d.medida) ?? '',
             cantidad: String(unidades),
             costo: unidades > 0 && valor > 0 ? String(Math.round((valor / unidades) * 100) / 100) : '',
@@ -232,7 +249,9 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
       }
     >
       <span className="sec chico">
-        El cliente verá estos neumáticos como “facturado, por recibir” y los pasará a su inventario cuando los reciba.
+        El cliente verá estos neumáticos como “facturado, por recibir” y los pasará a su inventario cuando los reciba. Por cada tipo de caucho
+        (línea) anota una sola vez la profundidad nueva y la presión máxima del costado: valen para todas sus unidades, y si ese artículo ya se
+        cargó antes, se rellenan solas.
       </span>
       <div className="tarjeta pila" style={{ margin: 0, background: 'var(--superficie-2)' }}>
         <b>Buscar la factura en el ERP</b>
@@ -281,10 +300,14 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
             onElegir={(a) => {
               const d = datosCaucho(a)
               const precio = Number(a.precio_a_la_fecha)
+              const indice = d.indice ?? buscarMedida(d.medida)?.indice ?? ''
+              const antes = recordados(datos.neumaticos, a.codigo, d.medida, indice || null)
               cambiar(l.clave, {
                 articulo_codigo: a.codigo, descripcion: a.nombre, marca: d.marca ?? '', medida: d.medida ?? '', modelo: d.modelo ?? '',
-                indice: d.indice ?? buscarMedida(d.medida)?.indice ?? '',
-            pmax: buscarMedida(d.medida)?.presionMax ? String(buscarMedida(d.medida)!.presionMax) : '', construccion: d.construccion ?? construccionProbable(d.medida) ?? '',
+                indice,
+                pmax: antes.pmax || (buscarMedida(d.medida)?.presionMax ? String(buscarMedida(d.medida)!.presionMax) : l.pmax),
+                profundidad: antes.profundidad || l.profundidad,
+                construccion: d.construccion ?? construccionProbable(d.medida) ?? '',
                 costo: precio > 0 ? String(precio) : l.costo,
               })
             }}
