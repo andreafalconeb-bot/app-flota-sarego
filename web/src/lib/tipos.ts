@@ -82,6 +82,10 @@ export interface Activo extends Base {
   presiones_nota?: string | null
   presiones_at?: string | null
   presiones_por?: string | null
+  /** En inactividad (0139): parado, sigue en la flota, no pide lectura y sus fluidos solo vencen por tiempo */
+  en_inactividad?: boolean
+  inactivo_desde?: string | null
+  inactividad_motivo?: string | null
   activo: boolean
   notas: string | null
 }

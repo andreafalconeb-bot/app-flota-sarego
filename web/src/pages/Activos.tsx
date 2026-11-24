@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useEmpresa } from '../lib/empresa'
 import { COMPONENTES, GRUPOS_TIPO, TIPOS, etiqueta } from '../lib/catalogos'
 import { fecha, numero, textoRestante } from '../lib/formato'
-import { proximoCambio, type EstadoServicio } from '../lib/calculos'
+import { estadoLectura, proximoCambio, type EstadoServicio } from '../lib/calculos'
 import { FormActivo } from '../components/formularios'
 import { Pill, Vacio } from '../components/ui'
 
@@ -65,7 +65,7 @@ export default function Activos() {
             </optgroup>
           ))}
         </select>
-        <label className="check chico"><input type="checkbox" checked={inactivos} onChange={(x) => setInactivos(x.target.checked)} /> Ver inactivos</label>
+        <label className="check chico"><input type="checkbox" checked={inactivos} onChange={(x) => setInactivos(x.target.checked)} /> Ver dados de baja</label>
       </div>
       {filas.length === 0 ? (
         <Vacio>{e.datos.activos.length ? 'Ningún activo coincide con la búsqueda.' : 'Todavía no hay activos cargados.'}</Vacio>
@@ -79,7 +79,8 @@ export default function Activos() {
               {filas.map(({ a, peor, cuales }) => (
                 <tr key={a.id} className="clic" onClick={() => navegar(a.id)}>
                   <td>
-                    <b>{a.codigo}</b> {!a.activo && <Pill>Inactivo</Pill>}
+                    <b>{a.codigo}</b> {!a.activo && <Pill>De baja</Pill>}
+                    {a.activo && a.en_inactividad && <span className="pill inactivo" title={a.inactividad_motivo ?? ''}>En inactividad</span>}
                     <div className="sec chico">{a.placa ?? ''}</div>
                   </td>
                   <td>{etiqueta(TIPOS, a.tipo)}</td>
@@ -87,7 +88,12 @@ export default function Activos() {
                   <td className="num">
                     {a.medidor !== 'horas' && a.km_actual != null && <div>{numero(a.km_actual)} km</div>}
                     {a.medidor !== 'km' && a.horas_actual != null && <div>{numero(a.horas_actual)} h</div>}
-                    <div className="sec chico">{a.lectura_at ? fecha(a.lectura_at) : 'sin lectura'}</div>
+                    {(() => {
+                      const l = estadoLectura(a)
+                      if (l.estado === 'pendiente') return <Pill tono="alerta">{l.dias == null ? 'Lectura pendiente' : `Lectura pendiente · hace ${l.dias} d`}</Pill>
+                      if (l.estado === 'inactivo') return <div className="sec chico">Parado · no pide lectura</div>
+                      return <div className="sec chico">{a.lectura_at ? fecha(a.lectura_at) : 'sin lectura'}</div>
+                    })()}
                   </td>
                   <td>
                     {!alarmas && peor !== 'sin_datos' && <span className="sec chico">Ver en la ficha</span>}

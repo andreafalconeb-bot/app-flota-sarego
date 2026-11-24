@@ -74,6 +74,32 @@ export function lecturaActual(a: Activo, u: Unidad): number | null {
   return u === 'km' ? a.km_actual : a.horas_actual
 }
 
+/** Cada activo pide odómetro u horómetro cada 7 días (Andrea, 24/nov/2026). */
+export const DIAS_LECTURA = 7
+
+export interface EstadoLectura {
+  /** 'al_dia' | 'pendiente' (pasaron 7 días o nunca se leyó) | 'inactivo' (parado: no pide) | 'baja' */
+  estado: 'al_dia' | 'pendiente' | 'inactivo' | 'baja'
+  /** Días desde la última lectura (null si nunca) */
+  dias: number | null
+  /** Días que faltan para pedir la próxima (negativo = atrasada) */
+  faltan: number | null
+}
+
+/**
+ * Lectura semanal: pendiente si nunca se leyó o pasaron DIAS_LECTURA días.
+ * Un activo en inactividad está parado, su medidor no avanza y no pide
+ * lectura (sus fluidos solo vencen por tiempo); uno dado de baja tampoco.
+ */
+export function estadoLectura(a: Pick<Activo, 'activo' | 'lectura_at'> & { en_inactividad?: boolean | null }, hoy = Date.now()): EstadoLectura {
+  const dias = a.lectura_at ? Math.max(0, Math.floor((hoy - new Date(a.lectura_at).getTime()) / DIA)) : null
+  if (!a.activo) return { estado: 'baja', dias, faltan: null }
+  if (a.en_inactividad) return { estado: 'inactivo', dias, faltan: null }
+  if (dias == null) return { estado: 'pendiente', dias, faltan: null }
+  const faltan = DIAS_LECTURA - dias
+  return { estado: faltan <= 0 ? 'pendiente' : 'al_dia', dias, faltan }
+}
+
 // ------------------------------------------------------------
 // Fluidos: próximo cambio y costo por hora / km
 // ------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, presionIdeal, presionSugerida, kgPorIndice, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
+import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, presionIdeal, presionSugerida, kgPorIndice, datosCaucho, proximoCambio, tramosConsumo, estadoLectura, DIAS_LECTURA } from './calculos'
 import { aplicar } from './datos'
 import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type Servicio } from './tipos'
 
@@ -298,5 +298,28 @@ describe('presionSugerida (estimación por carga)', () => {
   })
   it('pide el índice dual en un eje dual', () => {
     expect(presionSugerida({ cargaEjeKg: 9000, neumaticos: 4, dual: true, indice: '146', presionMaxPsi: 120 }).error).toMatch(/dual/)
+  })
+})
+
+describe('lectura semanal', () => {
+  const hoy = new Date('2026-11-24T12:00:00Z').getTime()
+  const hace = (d: number) => new Date(hoy - d * 86_400_000).toISOString()
+  it('pide lectura a los 7 días o si nunca se leyó', () => {
+    expect(DIAS_LECTURA).toBe(7)
+    expect(estadoLectura(activo({ lectura_at: hace(3) }), hoy)).toEqual({ estado: 'al_dia', dias: 3, faltan: 4 })
+    expect(estadoLectura(activo({ lectura_at: hace(7) }), hoy).estado).toBe('pendiente')
+    expect(estadoLectura(activo({ lectura_at: hace(12) }), hoy).faltan).toBe(-5)
+    expect(estadoLectura(activo({ lectura_at: null }), hoy).estado).toBe('pendiente')
+  })
+  it('en inactividad o de baja no pide lectura', () => {
+    expect(estadoLectura(activo({ lectura_at: hace(40), en_inactividad: true }), hoy).estado).toBe('inactivo')
+    expect(estadoLectura(activo({ lectura_at: hace(40), activo: false }), hoy).estado).toBe('baja')
+  })
+  it('en inactividad el fluido vence solo por tiempo', () => {
+    const a = activo({ km_actual: 105000, en_inactividad: true })
+    const s = { id: 's', empresa_id: 'e', activo_id: 'a1', compartimiento_id: 'c1', tipo: 'cambio', fecha: '2026-05-01', km: 100000, horas: null } as unknown as Servicio
+    const r = proximoCambio(comp({ intervalo_km: 10000, intervalo_dias: 180 }), a, [s], hoy)
+    expect(r.restante).toBe(5000)
+    expect(r.estado).toBe('vencido')
   })
 })
