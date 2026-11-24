@@ -7,6 +7,7 @@ import { ADITIVOS, COMBUSTIBLES, COMPONENTES, CUENTAS, MEDIDORES, TIPOS_COSTO, T
 import { marcasParaLote } from '../lib/calculos'
 import { plantillaPorTipo } from '../lib/ejes'
 import { SelectorEjes, SelectorTipo } from './dibujos'
+import { SelectorFluido } from './fluidos'
 import type { Activo, Carga, Compartimiento, Costo, Neumatico, Servicio } from '../lib/tipos'
 import { Campo, ErrorMsg, Modal, Selector, mensajeError, num } from './ui'
 
@@ -304,6 +305,7 @@ export function FormCompartimiento({ activo, comp, abierto, onCerrar }: {
     componente: comp?.componente ?? '',
     capacidad_l: txt(comp?.capacidad_l),
     producto: comp?.producto ?? '',
+    producto_codigo: comp?.producto_codigo ?? null as string | null,
     intervalo_km: txt(comp?.intervalo_km),
     intervalo_horas: txt(comp?.intervalo_horas),
     intervalo_dias: txt(comp?.intervalo_dias),
@@ -335,6 +337,7 @@ export function FormCompartimiento({ activo, comp, abierto, onCerrar }: {
                 componente: f.componente,
                 capacidad_l: num(f.capacidad_l),
                 producto: f.producto.trim() || null,
+                producto_codigo: f.producto.trim() ? f.producto_codigo : null,
                 intervalo_km: num(f.intervalo_km),
                 intervalo_horas: num(f.intervalo_horas),
                 intervalo_dias: num(f.intervalo_dias),
@@ -365,9 +368,14 @@ export function FormCompartimiento({ activo, comp, abierto, onCerrar }: {
         <Campo etiqueta="Capacidad (litros)">
           <input inputMode="decimal" value={f.capacidad_l} onChange={(e) => setF({ ...f, capacidad_l: e.target.value })} />
         </Campo>
-        <Campo etiqueta="Aceite que usa">
-          <input value={f.producto} onChange={(e) => setF({ ...f, producto: e.target.value })} placeholder="Ej.: Mobil Delvac MX 15W-40" />
-        </Campo>
+      </div>
+      <div className="campo">
+        <span>Fluido en uso</span>
+        <SelectorFluido
+          valor={{ producto: f.producto, codigo: f.producto_codigo }}
+          onCambio={(x) => setF({ ...f, producto: x.producto, producto_codigo: x.codigo })}
+          componente={f.componente}
+        />
       </div>
       <b className="chico">Intervalo de cambio que usan hoy</b>
       <div className="grid grid-3">
@@ -431,6 +439,7 @@ export function FormServicio({ activo, compId, abierto, onCerrar }: {
       tipo: 'cambio',
       fecha: hoyISO(),
       producto: c?.producto ?? '',
+      producto_codigo: c?.producto_codigo ?? null as string | null,
       litros: txt(c?.capacidad_l),
       filtros: '',
       costo_lubricante: '',
@@ -444,9 +453,16 @@ export function FormServicio({ activo, compId, abierto, onCerrar }: {
   const [horas, setHoras] = useState(txt(activo.horas_actual))
   const { error, enviando, enviar } = useEnvio(onCerrar)
 
+  const enUso = comps.find((x) => x.id === f.compartimiento_id)
   const elegirComp = (id: string) => {
     const c = comps.find((x) => x.id === id)
-    setF({ ...f, compartimiento_id: id, producto: f.producto || c?.producto || '', litros: f.litros || txt(c?.capacidad_l) })
+    setF({
+      ...f,
+      compartimiento_id: id,
+      producto: f.producto || c?.producto || '',
+      producto_codigo: f.producto ? f.producto_codigo : (c?.producto_codigo ?? null),
+      litros: f.litros || txt(c?.capacidad_l),
+    })
   }
 
   return (
@@ -469,6 +485,7 @@ export function FormServicio({ activo, compId, abierto, onCerrar }: {
                 km: num(km),
                 horas: num(horas),
                 producto: f.producto.trim() || null,
+                producto_codigo: f.producto.trim() ? f.producto_codigo : null,
                 litros: num(f.litros),
                 filtros: f.filtros.trim() || null,
                 costo_lubricante: num(f.costo_lubricante) ?? 0,
@@ -478,6 +495,11 @@ export function FormServicio({ activo, compId, abierto, onCerrar }: {
                 notas: f.notas.trim() || null,
               }
               await guardar('servicios', fila)
+              // Con el cambio, ese fluido pasa a ser el que tiene en uso
+              const comp = comps.find((x) => x.id === f.compartimiento_id)
+              if (f.tipo === 'cambio' && comp && f.producto.trim()) {
+                await guardar('compartimientos', { ...comp, producto: f.producto.trim(), producto_codigo: f.producto_codigo })
+              }
             })
           }
         />
@@ -499,9 +521,18 @@ export function FormServicio({ activo, compId, abierto, onCerrar }: {
           <input type="date" value={f.fecha} max={hoyISO()} onChange={(e) => setF({ ...f, fecha: e.target.value })} />
         </Campo>
         <Medidores activo={activo} km={km} horas={horas} setKm={setKm} setHoras={setHoras} />
-        <Campo etiqueta="Aceite / grasa">
-          <input value={f.producto} onChange={(e) => setF({ ...f, producto: e.target.value })} />
-        </Campo>
+        <div className="campo ancho-completo">
+          <span>{f.tipo === 'engrase' ? 'Grasa' : 'Aceite / fluido'}</span>
+          <SelectorFluido
+            valor={{ producto: f.producto, codigo: f.producto_codigo }}
+            onCambio={(x) => setF({ ...f, producto: x.producto, producto_codigo: x.codigo })}
+            componente={f.tipo === 'engrase' ? 'engrase' : comps.find((x) => x.id === f.compartimiento_id)?.componente}
+          />
+          {f.tipo === 'relleno' && enUso?.producto && f.producto && f.producto !== enUso.producto && (
+            <span className="aviso alerta chico">Ojo: es distinto al que tiene en uso ({enUso.producto}). Mezclar fluidos puede afectar el análisis de aceite.</span>
+          )}
+          {f.tipo === 'cambio' && <span className="sec chico">Con el cambio, este pasa a ser el fluido en uso del compartimiento.</span>}
+        </div>
         <Campo etiqueta="Litros">
           <input inputMode="decimal" value={f.litros} onChange={(e) => setF({ ...f, litros: e.target.value })} />
         </Campo>

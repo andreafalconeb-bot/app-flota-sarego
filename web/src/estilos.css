@@ -294,3 +294,11 @@ dialog.modal::backdrop { background: rgb(10 20 26 / .45); }
   .pv-barra { margin-top: 30px; }
   .pv-chasis { width: 34px; }
 }
+
+/* Fluidos */
+.fluido-lista { position: absolute; top: 100%; left: 0; right: 0; z-index: 5; margin-top: 2px; padding: 4px; max-height: 260px; overflow-y: auto; box-shadow: var(--sombra); display: flex; flex-direction: column; }
+.fluido-lista button { border: 0; border-radius: 4px; justify-content: space-between; text-align: left; padding: 6px 8px; font-size: .85rem; }
+.fluido-lista button:hover { background: var(--acento-suave); }
+.fluido-lista .fluido-otro { border-top: 1px solid var(--borde); border-radius: 0; color: var(--acento); font-weight: 600; }
+.fluido-elegido { justify-content: flex-start; text-align: left; width: 100%; }
+.en-uso { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

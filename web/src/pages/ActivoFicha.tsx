@@ -125,9 +125,12 @@ function Fluidos({ activo }: { activo: Activo }) {
                   {e.tiene('alarmas') && p.estado === 'proximo' && <Pill tono="alerta">Cambio próximo</Pill>}
                   {e.tiene('alarmas') && p.estado === 'ok' && <Pill tono="ok">Al día</Pill>}
                 </div>
-                <span className="chico">
-                  {c.producto ?? 'Aceite sin indicar'}{c.capacidad_l ? ` · ${numero(c.capacidad_l, 1)} L` : ''}
-                </span>
+                <div className="en-uso">
+                  <span className="sec chico">En uso</span>
+                  <b>{c.producto ?? 'Sin indicar'}</b>
+                  {c.producto && (c.producto_codigo ? <Pill tono="ok">SAREGO</Pill> : <Pill>Competencia</Pill>)}
+                  {c.capacidad_l ? <span className="sec chico">· {numero(c.capacidad_l, 1)} L</span> : null}
+                </div>
                 <span className="chico">
                   Cambia cada {p.intervalo ? `${numero(p.intervalo)} ${unidadTxt(u)}` : '—'}
                   {c.intervalo_dias ? ` o ${c.intervalo_dias} días` : ''}
