@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase'
 import { datosCaucho, marcasParaLote } from '../lib/calculos'
 import { dinero, fecha, hoyISO, serialNeumatico } from '../lib/formato'
 import type { Factura, Neumatico } from '../lib/tipos'
+import { ID_LISTA_MEDIDAS } from '../lib/medidas'
 import { Campo, ErrorMsg, Modal, Pill, mensajeError, num } from './ui'
 
 const MAX_UNIDADES = 200
@@ -278,7 +279,7 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
           />
           {l.descripcion && <span className="sec chico">{l.descripcion}</span>}
           <div className="grid grid-4">
-            <Campo etiqueta="Medida"><input value={l.medida} onChange={(e) => cambiar(l.clave, { medida: e.target.value })} /></Campo>
+            <Campo etiqueta="Medida"><input list={ID_LISTA_MEDIDAS} value={l.medida} onChange={(e) => cambiar(l.clave, { medida: e.target.value })} /></Campo>
             <Campo etiqueta="Marca"><input value={l.marca} onChange={(e) => cambiar(l.clave, { marca: e.target.value })} /></Campo>
             <Campo etiqueta="Modelo / diseño"><input value={l.modelo} onChange={(e) => cambiar(l.clave, { modelo: e.target.value })} /></Campo>
             <Campo etiqueta="DOT"><input value={l.dot} onChange={(e) => cambiar(l.clave, { dot: e.target.value })} placeholder="Ej.: 3524" /></Campo>

@@ -8,6 +8,8 @@ import { PLANTILLAS, ejeDe } from '../lib/ejes'
 import { fecha } from '../lib/formato'
 import type { Activo, Neumatico } from '../lib/tipos'
 import { PlantaVehiculo } from './planta'
+import { buscarMedida } from '../lib/medidas'
+import { presionSugerida } from '../lib/calculos'
 import { ErrorMsg, Modal, mensajeError, num } from './ui'
 
 /** Ejes de la plantilla con su clave ("1", "2"… y "R"). */
@@ -77,6 +79,31 @@ function FormPresiones({ activo, montados, onCerrar }: { activo: Activo; montado
   )
   const [nota, setNota] = useState(activo.presiones_nota ?? '')
   const [elegido, setElegido] = useState(ejes[0]?.clave ?? '')
+  // Estimación por carga (opcional)
+  const [estimar, setEstimar] = useState(false)
+  const [regresaVacio, setRegresaVacio] = useState(true)
+  const [calc, setCalc] = useState<Record<string, { carga: string; indice: string; pmax: string }>>(() =>
+    Object.fromEntries(
+      ejes.map((e) => {
+        const medida = e.posiciones.map((p) => montados.get(p)?.medida).find(Boolean)
+        const t = buscarMedida(medida)
+        return [e.clave, { carga: '', indice: t?.indice ?? '', pmax: t?.presionMax ? String(t.presionMax) : '' }]
+      }),
+    ),
+  )
+  const medidaDe = (e: { posiciones: string[] }) => e.posiciones.map((p) => montados.get(p)?.medida).find(Boolean) ?? null
+  const sugerida = (e: { clave: string; posiciones: string[] }) => {
+    const c = calc[e.clave]
+    if (!c || !num(c.carga)) return null
+    return presionSugerida({ cargaEjeKg: num(c.carga)!, neumaticos: e.posiciones.length, dual: e.posiciones.length > 2, indice: c.indice, presionMaxPsi: num(c.pmax) ?? 0 })
+  }
+  const usar = (e: { clave: string; nombre: string; posiciones: string[] }) => {
+    const r = sugerida(e)
+    if (!r?.psi) return
+    setValores((v) => ({ ...v, [e.clave]: String(r.psi) }))
+    const linea = `${e.nombre}: estimada ${r.psi} psi para ${num(calc[e.clave].carga)} kg (índice ${calc[e.clave].indice}, máx. ${calc[e.clave].pmax} psi)${regresaVacio ? ', fijada para ir cargado; regresa vacío' : ''}. Pendiente de confirmar por un técnico.`
+    setNota((n) => (n ? `${n}\n${linea}` : linea))
+  }
   const [error, setError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const paso = (clave: string, d: number) => setValores((v) => ({ ...v, [clave]: String(Math.max(0, (num(v[clave]) ?? 0) + d)) }))
@@ -158,9 +185,47 @@ function FormPresiones({ activo, montados, onCerrar }: { activo: Activo; montado
                   <button type="button" aria-label={`Subir ${e.nombre}`} onClick={() => paso(e.clave, 5)}>+</button>
                   <span className="sec chico">psi</span>
                 </div>
+                {estimar && e.clave !== 'R' && (
+                  <div className="calc-eje" onClick={(x) => x.stopPropagation()}>
+                    <label className="campo"><span>Carga máx. del eje (kg)</span>
+                      <input inputMode="numeric" value={calc[e.clave].carga} onChange={(x) => setCalc({ ...calc, [e.clave]: { ...calc[e.clave], carga: x.target.value } })} />
+                    </label>
+                    <label className="campo"><span>Índice de carga</span>
+                      <input value={calc[e.clave].indice} placeholder="146/143" onChange={(x) => setCalc({ ...calc, [e.clave]: { ...calc[e.clave], indice: x.target.value } })} />
+                    </label>
+                    <label className="campo"><span>Presión máx. costado (psi)</span>
+                      <input inputMode="numeric" value={calc[e.clave].pmax} onChange={(x) => setCalc({ ...calc, [e.clave]: { ...calc[e.clave], pmax: x.target.value } })} />
+                    </label>
+                    {(() => {
+                      const r = sugerida(e)
+                      if (!r) return <span className="sec chico">{medidaDe(e) ? `Medida montada: ${medidaDe(e)}.` : ''} Anota la carga máxima del eje.</span>
+                      if (r.error) return <span className="chico" style={{ color: 'var(--critico)' }}>{r.error}</span>
+                      return (
+                        <div className="sugerida">
+                          <span className="chico">Estimación: <b className="mono">{r.psi} psi</b> · {Math.round(r.kgPorNeumatico)} kg por neumático de {r.kgMaximo} kg que soporta</span>
+                          {r.sobrecarga && <span className="chico" style={{ color: 'var(--critico)', fontWeight: 600 }}>⚠ Sobrecarga: la carga pasa lo que soporta el neumático a su presión máxima.</span>}
+                          {r.enPiso && <span className="sec chico">La carga es baja: se dejó en el 60 % de la máxima como mínimo.</span>}
+                          <button type="button" className="chico" onClick={() => usar(e)}>Usar {r.psi} psi</button>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )}
               </div>
             )
           })}
+          <label className="check" onClick={(x) => x.stopPropagation()}>
+            <input type="checkbox" checked={estimar} onChange={(x) => setEstimar(x.target.checked)} /> Estimar la presión con la carga máxima (opcional)
+          </label>
+          {estimar && (
+            <div className="aviso alerta chico pila" style={{ gap: 4 }}>
+              <b>⚠ Es una estimación, no la presión indicada</b>
+              <span>Se calcula con la fórmula de carga de la TRA (la base de las tablas de carga e inflación de ETRTO, Michelin, Bridgestone y otros): la carga que soporta un neumático varía con la presión elevada a 0,585.</span>
+              <span>El índice de carga y la presión máxima vienen como típicos de la medida: verifícalos en el costado de cada neumático.</span>
+              <span>Solo un técnico, después de una inspección meticulosa (estado de la carcasa, desgaste, temperatura, ruta, velocidad), puede indicar la presión de carga correcta.</span>
+              <label className="check"><input type="checkbox" checked={regresaVacio} onChange={(x) => setRegresaVacio(x.target.checked)} /> Regresa vacío: la presión se fija para ir cargado y no se baja para el regreso</label>
+            </div>
+          )}
           <label className="campo">
             <span>Por qué esta presión (carga, ruta, terreno…)</span>
             <textarea value={nota} onChange={(x) => setNota(x.target.value)} placeholder="Ej.: 12 t por viaje, ruta de montaña, pavimento 80 % y tierra 20 %" />

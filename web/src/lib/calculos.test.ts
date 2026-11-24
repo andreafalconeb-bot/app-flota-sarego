@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, presionIdeal, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
+import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, presionIdeal, presionSugerida, kgPorIndice, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
 import { aplicar } from './datos'
 import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type Servicio } from './tipos'
 
@@ -272,5 +272,30 @@ describe('presionIdeal', () => {
     expect(presionIdeal({ presiones_eje: { '1': 105, R: 110 } }, '1', { presion_ideal_psi: 120 })).toEqual({ psi: 105, origen: 'activo' })
     expect(presionIdeal({ presiones_eje: { '1': 105 } }, '2', { presion_ideal_psi: 120 })).toEqual({ psi: 120, origen: 'fabricante' })
     expect(presionIdeal({}, '2', null)).toEqual({ psi: null, origen: null })
+  })
+})
+
+describe('presionSugerida (estimación por carga)', () => {
+  it('índice de carga a kg', () => {
+    expect(kgPorIndice(146)).toBe(3000)
+    expect(kgPorIndice(143)).toBe(2725)
+  })
+  it('a plena carga del índice da la presión máxima', () => {
+    const r = presionSugerida({ cargaEjeKg: 6000, neumaticos: 2, dual: false, indice: '146/143', presionMaxPsi: 120 })
+    expect(r.psi).toBe(120)
+    expect(r.sobrecarga).toBe(false)
+  })
+  it('con menos carga sugiere menos presión, redondeada de 5 en 5 hacia arriba', () => {
+    // 4 duales con 9000 kg: 2250 kg c/u; 143 = 2725 kg → 120 × (2250/2725)^(1/0,585) ≈ 86 → 90
+    const r = presionSugerida({ cargaEjeKg: 9000, neumaticos: 4, dual: true, indice: '146/143', presionMaxPsi: 120 })
+    expect(r.psi).toBe(90)
+  })
+  it('avisa sobrecarga y no pasa de la máxima', () => {
+    const r = presionSugerida({ cargaEjeKg: 13000, neumaticos: 4, dual: true, indice: '146/143', presionMaxPsi: 120 })
+    expect(r.sobrecarga).toBe(true)
+    expect(r.psi).toBe(120)
+  })
+  it('pide el índice dual en un eje dual', () => {
+    expect(presionSugerida({ cargaEjeKg: 9000, neumaticos: 4, dual: true, indice: '146', presionMaxPsi: 120 }).error).toMatch(/dual/)
   })
 })

@@ -494,6 +494,72 @@ export function presionIdeal(
   return { psi: null, origen: null }
 }
 
+// ------------------------------------------------------------
+// Presión sugerida por carga (estimación)
+// ------------------------------------------------------------
+/** Índice de carga (ISO 4223 / ETRTO / TRA) → kg por neumático. */
+const INDICE_CARGA: Record<number, number> = {
+  100: 800, 101: 825, 102: 850, 103: 875, 104: 900, 105: 925, 106: 950, 107: 975, 108: 1000, 109: 1030,
+  110: 1060, 111: 1090, 112: 1120, 113: 1150, 114: 1180, 115: 1215, 116: 1250, 117: 1285, 118: 1320, 119: 1360,
+  120: 1400, 121: 1450, 122: 1500, 123: 1550, 124: 1600, 125: 1650, 126: 1700, 127: 1750, 128: 1800, 129: 1850,
+  130: 1900, 131: 1950, 132: 2000, 133: 2060, 134: 2120, 135: 2180, 136: 2240, 137: 2300, 138: 2360, 139: 2430,
+  140: 2500, 141: 2575, 142: 2650, 143: 2725, 144: 2800, 145: 2900, 146: 3000, 147: 3075, 148: 3150, 149: 3250,
+  150: 3350, 151: 3450, 152: 3550, 153: 3650, 154: 3750, 155: 3875, 156: 4000, 157: 4125, 158: 4250, 159: 4375,
+  160: 4500, 161: 4625, 162: 4750, 163: 4875, 164: 5000, 165: 5150, 166: 5300, 167: 5450, 168: 5600, 169: 5800, 170: 6000,
+}
+
+export function kgPorIndice(indice: number): number | null {
+  return INDICE_CARGA[indice] ?? null
+}
+
+/** "146/143" → { sencillo: 146, dual: 143 }; "146" → solo sencillo. */
+export function leerIndice(texto: string): { sencillo: number; dual: number | null } | null {
+  const m = /^\s*(\d{3})\s*(?:\/\s*(\d{3}))?\s*$/.exec(texto)
+  if (!m) return null
+  return { sencillo: Number(m[1]), dual: m[2] ? Number(m[2]) : null }
+}
+
+/** Exponente de la presión en la fórmula de carga de la TRA (carga ∝ presión^0,585). */
+const EXPONENTE_TRA = 0.585
+
+export interface PresionSugerida {
+  psi: number | null
+  kgPorNeumatico: number
+  kgMaximo: number | null
+  sobrecarga: boolean
+  /** La sugerida quedó en el piso del 60 % de la máxima (carga muy baja) */
+  enPiso: boolean
+  error: string | null
+}
+
+/**
+ * Presión sugerida para un eje a partir de su carga máxima (Andrea,
+ * 24/nov/2026). ES UNA ESTIMACIÓN: usa la fórmula de carga de la TRA
+ * (base de las tablas de carga e inflación de ETRTO y de los
+ * fabricantes): la carga que soporta el neumático varía con la presión
+ * elevada a 0,585. Con el índice de carga del costado (sencillo / dual) y
+ * su presión máxima se despeja la presión mínima que soporta la carga
+ * por neumático, redondeada hacia arriba de 5 en 5 psi. Nunca pasa de la
+ * máxima del costado ni baja del 60 % de ella. Solo un técnico, tras una
+ * inspección meticulosa, fija la presión de carga indicada.
+ */
+export function presionSugerida(p: { cargaEjeKg: number; neumaticos: number; dual: boolean; indice: string; presionMaxPsi: number }): PresionSugerida {
+  const base = { psi: null, kgPorNeumatico: p.neumaticos ? p.cargaEjeKg / p.neumaticos : 0, kgMaximo: null, sobrecarga: false, enPiso: false }
+  const ind = leerIndice(p.indice)
+  if (!ind) return { ...base, error: 'Índice de carga no válido (ej.: 146/143).' }
+  const li = p.dual ? (ind.dual ?? null) : ind.sencillo
+  if (li == null) return { ...base, error: 'Para un eje dual hace falta el índice dual (el segundo número, ej.: 146/143).' }
+  const kgMax = kgPorIndice(li)
+  if (kgMax == null) return { ...base, error: `No tengo el índice ${li} en la tabla.` }
+  if (!(p.presionMaxPsi > 0) || !(p.cargaEjeKg > 0) || !(p.neumaticos > 0)) return { ...base, kgMaximo: kgMax, error: 'Faltan la carga del eje o la presión máxima.' }
+  const porNeumatico = p.cargaEjeKg / p.neumaticos
+  const sobrecarga = porNeumatico > kgMax
+  const exacta = p.presionMaxPsi * Math.pow(Math.min(porNeumatico / kgMax, 1), 1 / EXPONENTE_TRA)
+  const piso = p.presionMaxPsi * 0.6
+  const redondeada = Math.min(p.presionMaxPsi, Math.ceil(Math.max(exacta, piso) / 5) * 5)
+  return { psi: redondeada, kgPorNeumatico: porNeumatico, kgMaximo: kgMax, sobrecarga, enPiso: exacta < piso, error: null }
+}
+
 export function minimo(valores: (number | null | undefined)[]): number | null {
   const v = valores.filter((x): x is number => x != null && !isNaN(x))
   return v.length ? Math.min(...v) : null
