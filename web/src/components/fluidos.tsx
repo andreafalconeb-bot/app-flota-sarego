@@ -1,6 +1,6 @@
 // Fluidos: el catálogo de SAREGO para elegir qué aceite, grasa o
 // refrigerante se usó (Andrea, 24/nov/2026). Todos los productos de
-// SAREGO están; "Otro" deja anotar uno de la competencia. El catálogo se
+// SAREGO están; "Otro proveedor" deja anotar uno que no es de SAREGO. El catálogo se
 // guarda en el equipo para poder elegir sin internet (versión pago).
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
