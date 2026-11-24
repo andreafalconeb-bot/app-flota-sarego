@@ -6,6 +6,8 @@ import { fechaHora } from '../lib/formato'
 import { ROLES } from '../lib/catalogos'
 import { Cargando, Pill } from './ui'
 
+import { ID_LISTA_MEDIDAS, MEDIDAS } from '../lib/medidas'
+
 export default function Layout() {
   const { yo, salir } = useSesion()
   const e = useEmpresa()
@@ -31,6 +33,10 @@ export default function Layout() {
 
   return (
     <>
+      {/* Medidas comunes de neumáticos, para sugerir al escribir una medida */}
+      <datalist id={ID_LISTA_MEDIDAS}>
+        {MEDIDAS.map((m) => <option key={m.medida} value={m.medida}>{m.grupo}{m.nota ? ` · ${m.nota}` : ''}</option>)}
+      </datalist>
       <header className="cabecera">
         <Link to={varias ? '/' : base} className="logo" title={varias ? 'Cambiar de empresa' : undefined}>
           <img src="/favicon.svg" alt="" width={26} height={26} /> {e.empresa.nombre}

@@ -6,6 +6,7 @@ import { hoyISO, nombreNeumatico, numero, serialNeumatico } from '../lib/formato
 import { ADITIVOS, COMBUSTIBLES, COMPONENTES, CUENTAS, MEDIDORES, TIPOS_COSTO, TIPOS_SERVICIO, compartimientosSugeridos } from '../lib/catalogos'
 import { marcasParaLote } from '../lib/calculos'
 import { plantillaPorTipo } from '../lib/ejes'
+import { ID_LISTA_MEDIDAS, buscarMedida } from '../lib/medidas'
 import { SelectorEjes, SelectorTipo } from './dibujos'
 import { SelectorFluido } from './fluidos'
 import type { Activo, Carga, Compartimiento, Costo, Neumatico, Servicio } from '../lib/tipos'
@@ -848,7 +849,12 @@ export function FormNeumatico({ neumatico, abierto, onCerrar }: { neumatico?: Ne
             <input value={f.modelo} onChange={(e) => setF({ ...f, modelo: e.target.value })} />
           </Campo>
           <Campo etiqueta="Medida">
-            <input value={f.medida} onChange={(e) => setF({ ...f, medida: e.target.value })} placeholder="Ej.: 11R22.5" />
+            <input list={ID_LISTA_MEDIDAS} value={f.medida} onChange={(e) => setF({ ...f, medida: e.target.value })} placeholder="Escribe o elige: 295/80R22.5, 11R22.5…" />
+            {buscarMedida(f.medida)?.indice && (
+              <span className="sec chico">
+                Típico: índice {buscarMedida(f.medida)!.indice} · máx. {buscarMedida(f.medida)!.presionMax} psi (verifica el costado)
+              </span>
+            )}
           </Campo>
           <Campo etiqueta="Profundidad nueva (mm)">
             <input inputMode="decimal" value={f.profundidad_inicial_mm} onChange={(e) => setF({ ...f, profundidad_inicial_mm: e.target.value })} />
