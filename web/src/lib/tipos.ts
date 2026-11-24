@@ -77,6 +77,11 @@ export interface Activo extends Base {
   configuracion: string | null
   aditivo: string | null
   aditivo_desde: string | null
+  /** Presión ideal por eje según el trabajo del activo: {"1": 110, "2": 100, "R": 110} (0136) */
+  presiones_eje?: Record<string, number>
+  presiones_nota?: string | null
+  presiones_at?: string | null
+  presiones_por?: string | null
   activo: boolean
   notas: string | null
 }

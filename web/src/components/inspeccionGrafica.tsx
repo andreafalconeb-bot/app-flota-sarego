@@ -169,8 +169,10 @@ function PerfilBanda({ ranuras, nuevo }: { ranuras: (number | null)[]; nuevo: nu
 }
 
 /** Planta + detalle del neumático elegido con manómetro y perfil de banda. */
-export function InspeccionGrafica({ activo, montados, posiciones, filas, set, maxima }: {
+export function InspeccionGrafica({ activo, montados, posiciones, filas, set, maxima, origenIdeal }: {
   maxima: (n: Neumatico) => number | null
+  /** De dónde sale la presión ideal de esa posición */
+  origenIdeal?: (pos: string) => 'activo' | 'fabricante' | null
   activo: Activo
   montados: Map<string, Neumatico>
   posiciones: string[]
@@ -237,6 +239,13 @@ export function InspeccionGrafica({ activo, montados, posiciones, filas, set, ma
           </div>
           <div className="insp-medidas">
             <div className="pila" style={{ gap: 6, alignItems: 'center' }}>
+              <div className={'ideal-eje' + (origenIdeal?.(elegida) === 'activo' ? '' : ' fabricante')}>
+                <span className="chico">Presión ideal de este eje</span>
+                <b className="mono">{n.presion_ideal_psi ?? '—'} <small>psi</small></b>
+                <span className="chico">
+                  {origenIdeal?.(elegida) === 'activo' ? 'Calculada para el trabajo de este activo' : origenIdeal?.(elegida) === 'fabricante' ? 'Del fabricante (falta calcularla para este activo)' : 'Sin definir'}
+                </span>
+              </div>
               <Manometro presion={m.presion} ideal={n.presion_ideal_psi} />
               <label className="campo" style={{ width: '100%' }}>
                 <span>Presión encontrada, en frío (psi)</span>

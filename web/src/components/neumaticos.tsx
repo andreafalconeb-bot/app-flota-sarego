@@ -3,11 +3,12 @@
 import { useMemo, useState } from 'react'
 import { useEmpresa } from '../lib/empresa'
 import { hoyISO, fecha, nombreNeumatico, serialNeumatico } from '../lib/formato'
-import { PLANTILLAS, nombrePosicion, posicionesDe } from '../lib/ejes'
-import { condicionNeumatico, errorProfundidad, fugaLenta, presionActual, profundidadMaxima, estadoPresion, estadoProfundidad, minimo, type CondicionNeumatico, type EstadoMedida } from '../lib/calculos'
+import { PLANTILLAS, ejeDe, nombrePosicion, posicionesDe } from '../lib/ejes'
+import { condicionNeumatico, errorProfundidad, fugaLenta, presionActual, presionIdeal, profundidadMaxima, estadoPresion, estadoProfundidad, minimo, type CondicionNeumatico, type EstadoMedida } from '../lib/calculos'
 import type { Activo, InspeccionNeumatico, Neumatico } from '../lib/tipos'
 import { InspeccionGrafica, type FilaInspeccion } from './inspeccionGrafica'
 import { LeyendaEstados, PlantaVehiculo, type Celda } from './planta'
+import { ResumenPresiones } from './presiones'
 import { RAZONES_DESECHO, VALVULAS, etiqueta } from '../lib/catalogos'
 import { Campo, ErrorMsg, Modal, Pill, Selector, Vacio, mensajeError, num } from './ui'
 
@@ -55,7 +56,7 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
     [datos.neumaticos, activo.id],
   )
   const medidas = useMemo(() => ultimasMediciones(activo.id, datos), [activo.id, datos])
-  const { tiene } = useEmpresa()
+  const { tiene, esAdminEmpresa } = useEmpresa()
   // Fuga lenta: alarma, solo en la versión pago
   const fugas = useMemo(() => {
     if (!tiene('alarmas')) return []
@@ -110,6 +111,7 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
           {fugas.map(([p, n]) => `${p} ${nombreNeumatico(n)}`).join(' · ')}. Revisa válvula, rin y pinchazos.
         </div>
       )}
+      <ResumenPresiones activo={activo} montados={montados} puedeEditar={esAdminEmpresa} />
       <PlantaVehiculo configuracion={activo.configuracion} celda={celda} onElegir={setPosicion} />
       <LeyendaEstados />
       {posicion && <Posicion key={posicion} activo={activo} posicion={posicion} montado={montados.get(posicion) ?? null} onCerrar={() => setPosicion(null)} />}
@@ -405,8 +407,18 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
 }
 
 
-function Inspeccion({ activo, montados, onCerrar }: { activo: Activo; montados: Map<string, Neumatico>; onCerrar: () => void }) {
+function Inspeccion({ activo, montados: montadosReales, onCerrar }: { activo: Activo; montados: Map<string, Neumatico>; onCerrar: () => void }) {
   const { guardar, datos } = useEmpresa()
+  // La presión ideal es la calculada para este activo, por eje; si no
+  // está definida, la del neumático (fabricante)
+  const ideales = useMemo(
+    () => new Map([...montadosReales.entries()].map(([p, n]) => [p, presionIdeal(activo, ejeDe(p), n)])),
+    [montadosReales, activo],
+  )
+  const montados = useMemo(
+    () => new Map([...montadosReales.entries()].map(([p, n]) => [p, { ...n, presion_ideal_psi: ideales.get(p)!.psi }])),
+    [montadosReales, ideales],
+  )
   const posiciones = posicionesDe(activo.configuracion).filter((p) => montados.has(p))
   const [filas, setFilas] = useState<Record<string, FilaInspeccion>>(() =>
     Object.fromEntries(posiciones.map((p) => [p, { presion: '', dejada: '', p1: '', p2: '', p3: '', valvula: 'ok', observacion: '' }])),
@@ -481,7 +493,20 @@ function Inspeccion({ activo, montados, onCerrar }: { activo: Activo; montados: 
           <Campo etiqueta="Horómetro (h)"><input inputMode="decimal" value={horas} onChange={(e) => setHoras(e.target.value)} /></Campo>
         )}
       </div>
-      <InspeccionGrafica activo={activo} montados={montados} posiciones={posiciones} filas={filas} set={set} maxima={(n) => profundidadMaxima(n, datos.movimientos)} />
+      {[...ideales.values()].some((x) => x.origen !== 'activo') && (
+        <div className="aviso alerta chico">
+          Este activo todavía no tiene la presión ideal calculada para {[...ideales.values()].every((x) => x.origen !== 'activo') ? 'sus ejes' : 'algunos ejes'}; se usa la del fabricante del neumático. Defínela en “Presiones ideales”.
+        </div>
+      )}
+      <InspeccionGrafica
+        activo={activo}
+        montados={montados}
+        posiciones={posiciones}
+        filas={filas}
+        set={set}
+        maxima={(n) => profundidadMaxima(n, datos.movimientos)}
+        origenIdeal={(p) => ideales.get(p)?.origen ?? null}
+      />
       <Campo etiqueta="Notas"><input value={notas} onChange={(e) => setNotas(e.target.value)} /></Campo>
       <ErrorMsg error={error} />
     </Modal>
