@@ -2,11 +2,12 @@
 // que escribe primero en la base local y sube a la nube cuando puede.
 import { useState } from 'react'
 import { useEmpresa } from '../lib/empresa'
-import { hoyISO, nombreNeumatico, serialNeumatico } from '../lib/formato'
+import { hoyISO, nombreNeumatico, numero, serialNeumatico } from '../lib/formato'
 import { ADITIVOS, COMBUSTIBLES, COMPONENTES, CUENTAS, MEDIDORES, TIPOS_COSTO, TIPOS_SERVICIO, compartimientosSugeridos } from '../lib/catalogos'
 import { marcasParaLote } from '../lib/calculos'
 import { plantillaPorTipo } from '../lib/ejes'
 import { SelectorEjes, SelectorTipo } from './dibujos'
+import { SelectorFluido } from './fluidos'
 import type { Activo, Carga, Compartimiento, Costo, Neumatico, Servicio } from '../lib/tipos'
 import { Campo, ErrorMsg, Modal, Selector, mensajeError, num } from './ui'
 
@@ -304,6 +305,7 @@ export function FormCompartimiento({ activo, comp, abierto, onCerrar }: {
     componente: comp?.componente ?? '',
     capacidad_l: txt(comp?.capacidad_l),
     producto: comp?.producto ?? '',
+    producto_codigo: comp?.producto_codigo ?? null as string | null,
     intervalo_km: txt(comp?.intervalo_km),
     intervalo_horas: txt(comp?.intervalo_horas),
     intervalo_dias: txt(comp?.intervalo_dias),
@@ -335,6 +337,7 @@ export function FormCompartimiento({ activo, comp, abierto, onCerrar }: {
                 componente: f.componente,
                 capacidad_l: num(f.capacidad_l),
                 producto: f.producto.trim() || null,
+                producto_codigo: f.producto.trim() ? f.producto_codigo : null,
                 intervalo_km: num(f.intervalo_km),
                 intervalo_horas: num(f.intervalo_horas),
                 intervalo_dias: num(f.intervalo_dias),
@@ -365,9 +368,14 @@ export function FormCompartimiento({ activo, comp, abierto, onCerrar }: {
         <Campo etiqueta="Capacidad (litros)">
           <input inputMode="decimal" value={f.capacidad_l} onChange={(e) => setF({ ...f, capacidad_l: e.target.value })} />
         </Campo>
-        <Campo etiqueta="Aceite que usa">
-          <input value={f.producto} onChange={(e) => setF({ ...f, producto: e.target.value })} placeholder="Ej.: Mobil Delvac MX 15W-40" />
-        </Campo>
+      </div>
+      <div className="campo">
+        <span>Fluido en uso</span>
+        <SelectorFluido
+          valor={{ producto: f.producto, codigo: f.producto_codigo }}
+          onCambio={(x) => setF({ ...f, producto: x.producto, producto_codigo: x.codigo })}
+          componente={f.componente}
+        />
       </div>
       <b className="chico">Intervalo de cambio que usan hoy</b>
       <div className="grid grid-3">
@@ -431,6 +439,7 @@ export function FormServicio({ activo, compId, abierto, onCerrar }: {
       tipo: 'cambio',
       fecha: hoyISO(),
       producto: c?.producto ?? '',
+      producto_codigo: c?.producto_codigo ?? null as string | null,
       litros: txt(c?.capacidad_l),
       filtros: '',
       costo_lubricante: '',
@@ -444,9 +453,16 @@ export function FormServicio({ activo, compId, abierto, onCerrar }: {
   const [horas, setHoras] = useState(txt(activo.horas_actual))
   const { error, enviando, enviar } = useEnvio(onCerrar)
 
+  const enUso = comps.find((x) => x.id === f.compartimiento_id)
   const elegirComp = (id: string) => {
     const c = comps.find((x) => x.id === id)
-    setF({ ...f, compartimiento_id: id, producto: f.producto || c?.producto || '', litros: f.litros || txt(c?.capacidad_l) })
+    setF({
+      ...f,
+      compartimiento_id: id,
+      producto: f.producto || c?.producto || '',
+      producto_codigo: f.producto ? f.producto_codigo : (c?.producto_codigo ?? null),
+      litros: f.litros || txt(c?.capacidad_l),
+    })
   }
 
   return (
@@ -469,6 +485,7 @@ export function FormServicio({ activo, compId, abierto, onCerrar }: {
                 km: num(km),
                 horas: num(horas),
                 producto: f.producto.trim() || null,
+                producto_codigo: f.producto.trim() ? f.producto_codigo : null,
                 litros: num(f.litros),
                 filtros: f.filtros.trim() || null,
                 costo_lubricante: num(f.costo_lubricante) ?? 0,
@@ -478,6 +495,11 @@ export function FormServicio({ activo, compId, abierto, onCerrar }: {
                 notas: f.notas.trim() || null,
               }
               await guardar('servicios', fila)
+              // Con el cambio, ese fluido pasa a ser el que tiene en uso
+              const comp = comps.find((x) => x.id === f.compartimiento_id)
+              if (f.tipo === 'cambio' && comp && f.producto.trim()) {
+                await guardar('compartimientos', { ...comp, producto: f.producto.trim(), producto_codigo: f.producto_codigo })
+              }
             })
           }
         />
@@ -499,9 +521,18 @@ export function FormServicio({ activo, compId, abierto, onCerrar }: {
           <input type="date" value={f.fecha} max={hoyISO()} onChange={(e) => setF({ ...f, fecha: e.target.value })} />
         </Campo>
         <Medidores activo={activo} km={km} horas={horas} setKm={setKm} setHoras={setHoras} />
-        <Campo etiqueta="Aceite / grasa">
-          <input value={f.producto} onChange={(e) => setF({ ...f, producto: e.target.value })} />
-        </Campo>
+        <div className="campo ancho-completo">
+          <span>{f.tipo === 'engrase' ? 'Grasa' : 'Aceite / fluido'}</span>
+          <SelectorFluido
+            valor={{ producto: f.producto, codigo: f.producto_codigo }}
+            onCambio={(x) => setF({ ...f, producto: x.producto, producto_codigo: x.codigo })}
+            componente={f.tipo === 'engrase' ? 'engrase' : comps.find((x) => x.id === f.compartimiento_id)?.componente}
+          />
+          {f.tipo === 'relleno' && enUso?.producto && f.producto && f.producto !== enUso.producto && (
+            <span className="aviso alerta chico">Ojo: es distinto al que tiene en uso ({enUso.producto}). Mezclar fluidos puede afectar el análisis de aceite.</span>
+          )}
+          {f.tipo === 'cambio' && <span className="sec chico">Con el cambio, este pasa a ser el fluido en uso del compartimiento.</span>}
+        </div>
         <Campo etiqueta="Litros">
           <input inputMode="decimal" value={f.litros} onChange={(e) => setF({ ...f, litros: e.target.value })} />
         </Campo>
@@ -886,5 +917,88 @@ function RenovarBanda({ neumatico, onListo }: { neumatico: Neumatico; onListo: (
       </div>
       <ErrorMsg error={error} />
     </div>
+  )
+}
+
+/**
+ * Estado actual de un compartimiento al empezar a usar la app (Andrea,
+ * 24/nov/2026): ningún vehículo arranca con el aceite recién cambiado.
+ * Se anota qué fluido tiene y cuánto lleva desde su último cambio (o a
+ * qué lectura fue), y queda como un cambio aproximado para calcular el
+ * próximo.
+ */
+export function FormEstadoInicial({ activo, comp, onCerrar }: { activo: Activo; comp: Compartimiento; onCerrar: () => void }) {
+  const { guardar } = useEmpresa()
+  const u = activo.medidor === 'horas' ? 'horas' : 'km'
+  const actual = u === 'km' ? activo.km_actual : activo.horas_actual
+  const [fluido, setFluido] = useState({ producto: comp.producto ?? '', codigo: comp.producto_codigo ?? null as string | null })
+  const [modo, setModo] = useState<'recorrido' | 'lectura'>('recorrido')
+  const [valor, setValor] = useState('')
+  const [fecha, setFecha] = useState('')
+  const { error, enviando, enviar } = useEnvio(onCerrar)
+  const v = num(valor)
+  const lecturaCambio = v == null ? null : modo === 'recorrido' ? (actual != null ? actual - v : null) : v
+
+  return (
+    <Modal
+      abierto
+      titulo={`Estado actual — ${COMPONENTES[comp.componente] ?? comp.componente} · ${activo.codigo}`}
+      onCerrar={onCerrar}
+      pie={
+        <Pie
+          onCerrar={onCerrar}
+          enviando={enviando}
+          onGuardar={() =>
+            void enviar(async () => {
+              if (!fluido.producto.trim()) return 'Elige el fluido que tiene ahora.'
+              if (actual == null) return `Primero anota la lectura actual del ${u === 'km' ? 'odómetro' : 'horómetro'} del activo.`
+              if (lecturaCambio == null) return `Anota cuántos ${u} lleva desde el último cambio, aunque sea aproximado.`
+              if (lecturaCambio < 0 || lecturaCambio > actual) return `No cuadra con la lectura actual (${numero(actual)} ${u}).`
+              await guardar('servicios', {
+                activo_id: activo.id,
+                compartimiento_id: comp.id,
+                tipo: 'cambio',
+                fecha: fecha || hoyISO(),
+                km: u === 'km' ? lecturaCambio : null,
+                horas: u === 'horas' ? lecturaCambio : null,
+                producto: fluido.producto.trim(),
+                producto_codigo: fluido.codigo,
+                litros: null, filtros: null,
+                costo_lubricante: 0, costo_filtros: 0, costo_mano_obra: 0, costo_otros: 0,
+                notas: 'Estado inicial (aproximado): último cambio antes de usar la app',
+              } as Partial<Servicio>)
+              await guardar('compartimientos', { ...comp, producto: fluido.producto.trim(), producto_codigo: fluido.codigo })
+            })
+          }
+        />
+      }
+    >
+      <span className="sec chico">
+        Queda como el último cambio (aproximado) para calcular cuándo toca el próximo. No suma costos.
+      </span>
+      <div className="campo">
+        <span>Fluido que tiene ahora</span>
+        <SelectorFluido valor={fluido} onCambio={setFluido} componente={comp.componente} />
+      </div>
+      <div className="fila">
+        <label className="check"><input type="radio" checked={modo === 'recorrido'} onChange={() => setModo('recorrido')} /> Lleva unos … {u} desde el cambio</label>
+        <label className="check"><input type="radio" checked={modo === 'lectura'} onChange={() => setModo('lectura')} /> Se cambió a los … {u}</label>
+      </div>
+      <div className="grid grid-2">
+        <Campo etiqueta={modo === 'recorrido' ? `${u === 'km' ? 'Km' : 'Horas'} desde el último cambio (aprox.)` : `Lectura cuando se cambió (${u})`}>
+          <input inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} />
+        </Campo>
+        <Campo etiqueta="Fecha aproximada del cambio (opcional)">
+          <input type="date" value={fecha} max={hoyISO()} onChange={(e) => setFecha(e.target.value)} />
+        </Campo>
+      </div>
+      {actual != null && lecturaCambio != null && lecturaCambio >= 0 && lecturaCambio <= actual && (
+        <div className="aviso ok chico">
+          Último cambio a los {numero(lecturaCambio)} {u} · lleva {numero(actual - lecturaCambio)} {u} con este fluido.
+        </div>
+      )}
+      {actual == null && <div className="aviso alerta chico">Este activo no tiene lectura actual. Anótala primero con “Nueva lectura”.</div>}
+      <ErrorMsg error={error} />
+    </Modal>
   )
 }

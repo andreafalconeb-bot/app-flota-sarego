@@ -6,7 +6,7 @@ import { PLANTILLAS } from '../lib/ejes'
 import { dinero, fecha, fechaHora, hoyISO, numero, textoRestante } from '../lib/formato'
 import { AHORRO_PROMETIDO, compararAditivo, costoPorUso, proximoCambio, totalServicio, tramosConsumo, unidadPrincipal } from '../lib/calculos'
 import type { Activo, Compartimiento } from '../lib/tipos'
-import { FormActivo, FormCarga, FormCompartimiento, FormCosto, FormLectura, FormServicio } from '../components/formularios'
+import { FormActivo, FormCarga, FormCompartimiento, FormCosto, FormEstadoInicial, FormLectura, FormServicio } from '../components/formularios'
 import { NeumaticosActivo } from '../components/neumaticos'
 import { Campo, ErrorMsg, Metrica, Pill, Selector, SoloPago, Vacio, mensajeError } from '../components/ui'
 
@@ -84,6 +84,7 @@ function Fluidos({ activo }: { activo: Activo }) {
   const e = useEmpresa()
   const [servicio, setServicio] = useState<string | null>(null)
   const [editar, setEditar] = useState<Compartimiento | 'nuevo' | null>(null)
+  const [inicial, setInicial] = useState<Compartimiento | null>(null)
   const comps = e.datos.compartimientos.filter((c) => c.activo_id === activo.id)
   const servicios = e.datos.servicios.filter((s) => s.activo_id === activo.id).sort((a, b) => b.fecha.localeCompare(a.fecha))
   const total = costoPorUso(e.datos.servicios, activo)
@@ -125,9 +126,12 @@ function Fluidos({ activo }: { activo: Activo }) {
                   {e.tiene('alarmas') && p.estado === 'proximo' && <Pill tono="alerta">Cambio próximo</Pill>}
                   {e.tiene('alarmas') && p.estado === 'ok' && <Pill tono="ok">Al día</Pill>}
                 </div>
-                <span className="chico">
-                  {c.producto ?? 'Aceite sin indicar'}{c.capacidad_l ? ` · ${numero(c.capacidad_l, 1)} L` : ''}
-                </span>
+                <div className="en-uso">
+                  <span className="sec chico">En uso</span>
+                  <b>{c.producto ?? 'Sin indicar'}</b>
+                  {c.producto && (c.producto_codigo ? <Pill tono="ok">SAREGO</Pill> : <Pill>Competencia</Pill>)}
+                  {c.capacidad_l ? <span className="sec chico">· {numero(c.capacidad_l, 1)} L</span> : null}
+                </div>
                 <span className="chico">
                   Cambia cada {p.intervalo ? `${numero(p.intervalo)} ${unidadTxt(u)}` : '—'}
                   {c.intervalo_dias ? ` o ${c.intervalo_dias} días` : ''}
@@ -139,7 +143,14 @@ function Fluidos({ activo }: { activo: Activo }) {
                     {e.tiene('alarmas') && p.restante != null && ` · ${textoRestante(p.restante, u)}`}
                   </span>
                 ) : (
-                  <span className="chico sec">Sin cambios registrados.</span>
+                  <div className="aviso chico pila" style={{ gap: 6 }}>
+                    <span>Sin cambios registrados. Anota qué tiene y cuánto lleva desde su último cambio para que el próximo se calcule bien.</span>
+                    {e.puedeEscribir && (
+                      <button className="chico primario" style={{ alignSelf: 'flex-start' }} onClick={() => setInicial(c)}>
+                        Anotar el estado actual
+                      </button>
+                    )}
+                  </div>
                 )}
                 {/* Versión gratis: sin alarmas, solo el dato para verificarlo a mano */}
                 {!e.tiene('alarmas') && (p.vence != null || p.venceFecha) && (
@@ -211,6 +222,7 @@ function Fluidos({ activo }: { activo: Activo }) {
           </div>
         )}
       </section>
+      {inicial && <FormEstadoInicial activo={activo} comp={inicial} onCerrar={() => setInicial(null)} />}
       {servicio !== null && <FormServicio activo={activo} compId={servicio || undefined} abierto onCerrar={() => setServicio(null)} />}
       {editar && <FormCompartimiento activo={activo} comp={editar === 'nuevo' ? undefined : editar} abierto onCerrar={() => setEditar(null)} />}
     </div>
