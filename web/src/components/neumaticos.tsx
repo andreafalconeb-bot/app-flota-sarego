@@ -8,8 +8,8 @@ import { condicionNeumatico, errorProfundidad, fugaLenta, presionActual, profund
 import type { Activo, InspeccionNeumatico, Neumatico } from '../lib/tipos'
 import { InspeccionGrafica, type FilaInspeccion } from './inspeccionGrafica'
 import { LeyendaEstados, PlantaVehiculo, type Celda } from './planta'
-import { RAZONES_DESECHO } from '../lib/catalogos'
-import { Campo, ErrorMsg, Modal, Selector, Vacio, mensajeError, num } from './ui'
+import { RAZONES_DESECHO, VALVULAS, etiqueta } from '../lib/catalogos'
+import { Campo, ErrorMsg, Modal, Pill, Selector, Vacio, mensajeError, num } from './ui'
 
 
 /** Última medición de cada posición del activo. */
@@ -114,7 +114,103 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
       <LeyendaEstados />
       {posicion && <Posicion key={posicion} activo={activo} posicion={posicion} montado={montados.get(posicion) ?? null} onCerrar={() => setPosicion(null)} />}
       {inspeccionar && <Inspeccion activo={activo} montados={montados} onCerrar={() => setInspeccionar(false)} />}
+      <HistorialInspecciones activo={activo} />
     </div>
+  )
+}
+
+/** Historial de inspecciones de presión, profundidad y válvula del activo. */
+function HistorialInspecciones({ activo }: { activo: Activo }) {
+  const { datos, esAdminEmpresa, borrar } = useEmpresa()
+  const inspecciones = datos.inspecciones.filter((i) => i.activo_id === activo.id).sort((a, b) => b.fecha.localeCompare(a.fecha))
+  const tono = { ok: 'ok', alerta: 'alerta', critico: 'critico', sin_dato: undefined } as const
+
+  return (
+    <section className="tarjeta pila">
+      <h2>Historial de inspecciones</h2>
+      {inspecciones.length === 0 ? (
+        <Vacio>Sin inspecciones. Usa “Inspección de presión y profundidad”.</Vacio>
+      ) : (
+        inspecciones.map((i) => {
+          const filas = datos.inspeccionNeumaticos
+            .filter((x) => x.inspeccion_id === i.id)
+            .sort((a, b) => posicionesDe(activo.configuracion).indexOf(a.posicion) - posicionesDe(activo.configuracion).indexOf(b.posicion))
+          const estados = filas.map((x) => {
+            const ep = estadoPresion(x.presion_psi, x.presion_ideal_psi)
+            const ed = estadoProfundidad(x.profundidad_min_mm)
+            return [ep, ed].includes('critico') ? 'critico' : [ep, ed].includes('alerta') ? 'alerta' : 'ok'
+          })
+          const criticos = estados.filter((e) => e === 'critico').length
+          const revisar = estados.filter((e) => e === 'alerta').length
+          const ajustados = filas.filter((x) => x.presion_dejada_psi != null && x.presion_dejada_psi !== x.presion_psi).length
+          return (
+            <details key={i.id} className="insp-hist">
+              <summary>
+                <b>{fecha(i.fecha.slice(0, 10))}</b>
+                <span className="sec chico">
+                  {i.km != null && `${Math.round(i.km).toLocaleString('es-VE')} km`} {i.horas != null && `${Math.round(i.horas).toLocaleString('es-VE')} h`}
+                </span>
+                <span className="chico">{filas.length} neumáticos</span>
+                {criticos > 0 && <Pill tono="critico">✕ {criticos} críticos</Pill>}
+                {revisar > 0 && <Pill tono="alerta">! {revisar} por revisar</Pill>}
+                {criticos + revisar === 0 && filas.length > 0 && <Pill tono="ok">✓ Todo bien</Pill>}
+                {ajustados > 0 && <span className="sec chico">{ajustados} presiones ajustadas</span>}
+              </summary>
+              <div className="tabla-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Posición</th><th>Neumático</th><th>Presión (psi)</th><th>Ranuras (mm)</th><th>Válvula</th><th>Observación</th></tr>
+                  </thead>
+                  <tbody>
+                    {filas.map((x) => {
+                      const n = datos.neumaticos.find((y) => y.id === x.neumatico_id)
+                      const d = x.presion_psi != null && x.presion_ideal_psi ? (x.presion_psi - x.presion_ideal_psi) / x.presion_ideal_psi : null
+                      const ep = estadoPresion(x.presion_psi, x.presion_ideal_psi)
+                      const ed = estadoProfundidad(x.profundidad_min_mm)
+                      return (
+                        <tr key={x.id}>
+                          <td><b className="mono">{x.posicion}</b><div className="sec chico">{nombrePosicion(x.posicion)}</div></td>
+                          <td className="mono chico">{n ? nombreNeumatico(n) : '—'}{n?.marca_fuego && <div className="sec">{serialNeumatico(n)}</div>}</td>
+                          <td className="chico">
+                            {x.presion_psi ?? '—'}
+                            {x.presion_dejada_psi != null && x.presion_dejada_psi !== x.presion_psi && <> → <b>{x.presion_dejada_psi}</b> <span className="sec">(ajustada)</span></>}
+                            <div>
+                              {d != null && <Pill tono={tono[ep]}>{d > 0 ? '+' : ''}{Math.round(d * 100)} %</Pill>}{' '}
+                              <span className="sec">ideal {x.presion_ideal_psi ?? '—'}</span>
+                            </div>
+                          </td>
+                          <td className="chico">
+                            {x.profundidades_mm?.length ? x.profundidades_mm.join(' · ') : '—'}
+                            {x.profundidad_min_mm != null && <div><Pill tono={tono[ed]}>mín {x.profundidad_min_mm}</Pill></div>}
+                          </td>
+                          <td className="chico">{x.valvula ? etiqueta(VALVULAS, x.valvula) : '—'}</td>
+                          <td className="chico">{x.observacion ?? ''}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {i.notas && <p className="chico" style={{ margin: '6px 0' }}>Notas: {i.notas}</p>}
+              {esAdminEmpresa && (
+                <button
+                  className="chico"
+                  onClick={() => {
+                    if (!confirm('¿Borrar esta inspección?')) return
+                    void (async () => {
+                      for (const x of filas) await borrar('inspeccionNeumaticos', x.id)
+                      await borrar('inspecciones', i.id)
+                    })()
+                  }}
+                >
+                  Borrar inspección
+                </button>
+              )}
+            </details>
+          )
+        })
+      )}
+    </section>
   )
 }
 
