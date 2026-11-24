@@ -333,3 +333,11 @@ dialog.modal::backdrop { background: rgb(10 20 26 / .45); }
 /* Medida y capacidad de carga */
 .cortinas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; padding: 10px; border-radius: var(--radio); background: var(--superficie-2); border-left: 3px solid var(--acento); }
 .chips-indices { gap: 4px; margin-top: 2px; }
+
+/* Compartimiento con cambio vencido o próximo: toda la tarjeta en amarillo claro */
+.tarjeta.comp-vencido { background: #fff6c7; border: 2px solid #e0b100; }
+.tarjeta.comp-proximo { background: #fffbe6; border-color: #f0d264; }
+@media (prefers-color-scheme: dark) {
+  .tarjeta.comp-vencido { background: #3a3110; border-color: #b8900a; }
+  .tarjeta.comp-proximo { background: #2e2a14; border-color: #7a6a20; }
+}

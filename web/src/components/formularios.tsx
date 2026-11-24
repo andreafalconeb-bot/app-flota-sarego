@@ -791,6 +791,10 @@ export function FormNeumatico({ neumatico, abierto, onCerrar }: { neumatico?: Ne
             onGuardar={() =>
               void enviar(async () => {
                 if (cant > MAX_LOTE) return `Se pueden cargar hasta ${MAX_LOTE} neumáticos de una vez.`
+                // Al ingresar al inventario se piden la profundidad nueva y la
+                // presión máxima: al montarlo ya no se preguntan (Andrea, 24/nov/2026)
+                if (!neumatico && num(f.profundidad_inicial_mm) == null) return 'Anota la profundidad nueva (mm): es obligatoria al ingresar al inventario.'
+                if (!neumatico && num(cap.presionMax) == null) return 'Anota la presión máxima del costado (psi): es obligatoria al ingresar al inventario.'
                 const comun: Partial<Neumatico> = {
                   ...(neumatico ?? { estado: 'inventario', activo_id: null, posicion: null, montado_at: null, km_montaje: null, horas_montaje: null }),
                   marca: f.marca.trim() || null,
@@ -856,7 +860,7 @@ export function FormNeumatico({ neumatico, abierto, onCerrar }: { neumatico?: Ne
           <div className="ancho-completo">
             <MedidaYCapacidad valor={cap} onCambio={(c) => { setCap(c); setF({ ...f, medida: c.medida }) }} />
           </div>
-          <Campo etiqueta="Profundidad nueva (mm)">
+          <Campo etiqueta={neumatico ? 'Profundidad nueva (mm)' : 'Profundidad nueva (mm, obligatoria)'}>
             <input inputMode="decimal" value={f.profundidad_inicial_mm} onChange={(e) => setF({ ...f, profundidad_inicial_mm: e.target.value })} />
           </Campo>
           <Campo etiqueta="Presión ideal (psi)">

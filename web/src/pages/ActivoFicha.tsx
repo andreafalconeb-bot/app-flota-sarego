@@ -119,7 +119,11 @@ function Fluidos({ activo }: { activo: Activo }) {
             const u = unidadPrincipal(activo.medidor)
             const sugerido = u === 'km' ? c.sugerido_km : c.sugerido_horas
             return (
-              <div key={c.id} className="tarjeta pila" style={{ margin: 0 }}>
+              <div
+                key={c.id}
+                className={'tarjeta pila' + (e.tiene('alarmas') && p.estado === 'vencido' ? ' comp-vencido' : e.tiene('alarmas') && p.estado === 'proximo' ? ' comp-proximo' : '')}
+                style={{ margin: 0 }}
+              >
                 <div className="fila-entre">
                   <h3>{etiqueta(COMPONENTES, c.componente)}</h3>
                   {e.tiene('alarmas') && p.estado === 'vencido' && <Pill tono="critico">Cambio vencido</Pill>}

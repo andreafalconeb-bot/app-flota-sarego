@@ -147,7 +147,7 @@ export function MedidaYCapacidad({ valor, onCambio }: { valor: Capacidad; onCamb
             </label>
           )}
           <label className="campo">
-            <span>Presión máxima del costado (psi)</span>
+            <span>Presión máxima del costado (psi, obligatoria)</span>
             <input inputMode="numeric" value={valor.presionMax} onChange={(e) => set({ presionMax: e.target.value.replace(/[^\d.]/g, '') })} placeholder={tipica?.presionMax ? String(tipica.presionMax) : 'Ej.: 120'} />
           </label>
         </div>
