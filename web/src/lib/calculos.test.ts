@@ -191,12 +191,13 @@ describe('marcasParaLote', () => {
 describe('datosCaucho', () => {
   it('saca medida, modelo y marca del nombre del artículo', () => {
     expect(datosCaucho({ nombre: '265/65R17 112T FR GRABBER AT GENERAL TIRE', categoria: 'GENERAL TIRE' }))
-      .toEqual({ marca: 'GENERAL TIRE', medida: '265/65R17', modelo: '112T FR GRABBER AT' })
+      .toMatchObject({ marca: 'GENERAL TIRE', medida: '265/65R17', modelo: '112T FR GRABBER AT' })
     expect(datosCaucho({ nombre: '275/70R22.5  PR16 HS205 (DIREC) TERRAKING RIN/Otros: 22.5', categoria: 'VARIAS MARCAS' }))
-      .toEqual({ marca: null, medida: '275/70R22.5', modelo: 'PR16 HS205 (DIREC) TERRAKING' })
+      .toMatchObject({ marca: null, medida: '275/70R22.5', modelo: 'PR16 HS205 (DIREC) TERRAKING' })
     expect(datosCaucho({ nombre: '7.50-16 10L CONVENCIONAL DIR', categoria: 'VARIAS MARCAS' }).medida).toBe('7.50-16')
     expect(datosCaucho({ nombre: 'LT315/70R17 121/118R LRD FR GRABBER X3 GENERAL TIRE', categoria: 'GENERAL TIRE' }).medida).toBe('LT315/70R17')
     expect(datosCaucho({ nombre: '31X10.50R15LT 109R DESTINATION A/T FIRESTONE', categoria: 'FIRESTONE' }).medida).toBe('31X10.50R15LT')
+    expect(datosCaucho({ nombre: '295/80R22.5 152/148M TL EV600 EVERTON', categoria: 'VARIAS MARCAS' })).toMatchObject({ indice: '152/148', construccion: 'tubeless' })
   })
 })
 

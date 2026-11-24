@@ -348,7 +348,13 @@ export function marcasParaLote(inicio: string, cantidad: number): (string | null
  * TERRAKING RIN/Otros: 22.5" → medida 275/70R22.5, modelo "PR16 HS205
  * (DIREC) TERRAKING". La marca es la categoría, salvo "VARIAS MARCAS".
  */
-export function datosCaucho(a: { nombre: string; categoria: string | null }): { marca: string | null; medida: string | null; modelo: string | null } {
+export function datosCaucho(a: { nombre: string; categoria: string | null }): {
+  marca: string | null
+  medida: string | null
+  modelo: string | null
+  indice: string | null
+  construccion: 'tubeless' | 'tube_type' | null
+} {
   const limpio = a.nombre.replace(/RIN\/Otros:.*$/i, '').replace(/\s+/g, ' ').trim()
   const m = /^((?:LT)?[\d.]+(?:X[\d.]+)?(?:R|-|\/)[\d.R/]+(?:\s?LT)?)\s*(.*)$/i.exec(limpio)
   const medida = m ? m[1].replace(/\s/g, '').toUpperCase() : null
@@ -356,7 +362,10 @@ export function datosCaucho(a: { nombre: string; categoria: string | null }): { 
   const cat = (a.categoria ?? '').trim()
   const marca = cat && !/VARIAS/i.test(cat) ? cat : null
   if (marca && modelo.toUpperCase().endsWith(marca.toUpperCase())) modelo = modelo.slice(0, -marca.length).trim()
-  return { marca, medida, modelo: modelo || null }
+  const indice = /(?:^|\s)(\d{3}\/\d{3})[A-Z]?(?:\s|$)/.exec(limpio)?.[1] ?? null
+  const N = a.nombre.toUpperCase()
+  const construccion = /(^|\s)(TL|TUBELESS|S\/C)(\s|$)/.test(N) ? 'tubeless' : /(^|\s)(TT|TUBE TYPE|C\/C|CON CAMARA)(\s|$)/.test(N) ? 'tube_type' : null
+  return { marca, medida, modelo: modelo || null, indice, construccion }
 }
 
 /**

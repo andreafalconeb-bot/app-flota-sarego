@@ -9,7 +9,7 @@ import { supabase } from '../lib/supabase'
 import { datosCaucho, marcasParaLote } from '../lib/calculos'
 import { dinero, fecha, hoyISO, serialNeumatico } from '../lib/formato'
 import type { Factura, Neumatico } from '../lib/tipos'
-import { ID_LISTA_MEDIDAS } from '../lib/medidas'
+import { CONSTRUCCIONES, ID_LISTA_MEDIDAS, buscarMedida, construccionProbable } from '../lib/medidas'
 import { Campo, ErrorMsg, Modal, Pill, mensajeError, num } from './ui'
 
 const MAX_UNIDADES = 200
@@ -26,12 +26,14 @@ interface Linea {
   dot: string
   profundidad: string
   presion: string
+  indice: string
+  construccion: '' | 'tubeless' | 'tube_type'
 }
 
 let siguiente = 1
 const lineaVacia = (): Linea => ({
   clave: siguiente++, articulo_codigo: '', descripcion: '', marca: '', modelo: '', medida: '',
-  cantidad: '1', costo: '', dot: '', profundidad: '', presion: '',
+  cantidad: '1', costo: '', dot: '', profundidad: '', presion: '', indice: '', construccion: '',
 })
 
 interface Articulo {
@@ -164,6 +166,8 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
             marca: d.marca ?? '',
             medida: d.medida ?? '',
             modelo: d.modelo ?? '',
+            indice: d.indice ?? buscarMedida(d.medida)?.indice ?? '',
+            construccion: d.construccion ?? construccionProbable(d.medida) ?? '',
             cantidad: String(unidades),
             costo: unidades > 0 && valor > 0 ? String(Math.round((valor / unidades) * 100) / 100) : '',
           }
@@ -195,6 +199,8 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
             marca_fuego: null, marca: l.marca.trim() || null, modelo: l.modelo.trim() || null, medida: l.medida.trim() || null,
             dot: l.dot.trim() || null, profundidad_inicial_mm: num(l.profundidad), presion_ideal_psi: num(l.presion),
             costo: num(l.costo), fecha_compra: dia, notas: `Factura SAREGO ${n}`,
+            indice_carga: l.indice.trim() || null, construccion: l.construccion || null,
+            presion_max_psi: buscarMedida(l.medida)?.presionMax ?? null,
             activo_id: null, posicion: null, montado_at: null, km_montaje: null, horas_montaje: null,
           } as Partial<Neumatico>)
         }
@@ -273,6 +279,7 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
               const precio = Number(a.precio_a_la_fecha)
               cambiar(l.clave, {
                 articulo_codigo: a.codigo, descripcion: a.nombre, marca: d.marca ?? '', medida: d.medida ?? '', modelo: d.modelo ?? '',
+                indice: d.indice ?? buscarMedida(d.medida)?.indice ?? '', construccion: d.construccion ?? construccionProbable(d.medida) ?? '',
                 costo: precio > 0 ? String(precio) : l.costo,
               })
             }}
@@ -282,6 +289,13 @@ export function FormFactura({ onCerrar }: { onCerrar: () => void }) {
             <Campo etiqueta="Medida"><input list={ID_LISTA_MEDIDAS} value={l.medida} onChange={(e) => cambiar(l.clave, { medida: e.target.value })} /></Campo>
             <Campo etiqueta="Marca"><input value={l.marca} onChange={(e) => cambiar(l.clave, { marca: e.target.value })} /></Campo>
             <Campo etiqueta="Modelo / diseño"><input value={l.modelo} onChange={(e) => cambiar(l.clave, { modelo: e.target.value })} /></Campo>
+            <Campo etiqueta="Construcción">
+              <select value={l.construccion} onChange={(e) => cambiar(l.clave, { construccion: e.target.value as Linea['construccion'] })}>
+                <option value="">Elige…</option>
+                {Object.entries(CONSTRUCCIONES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </Campo>
+            <Campo etiqueta="Índice de carga"><input value={l.indice} onChange={(e) => cambiar(l.clave, { indice: e.target.value })} placeholder="Ej.: 152/148" /></Campo>
             <Campo etiqueta="DOT"><input value={l.dot} onChange={(e) => cambiar(l.clave, { dot: e.target.value })} placeholder="Ej.: 3524" /></Campo>
             <Campo etiqueta="Cantidad"><input inputMode="numeric" value={l.cantidad} onChange={(e) => cambiar(l.clave, { cantidad: e.target.value.replace(/\D/g, '') })} /></Campo>
             <Campo etiqueta="Precio por neumático (US$)"><input inputMode="decimal" value={l.costo} onChange={(e) => cambiar(l.clave, { costo: e.target.value })} /></Campo>

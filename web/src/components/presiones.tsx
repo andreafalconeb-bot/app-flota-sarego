@@ -85,9 +85,13 @@ function FormPresiones({ activo, montados, onCerrar }: { activo: Activo; montado
   const [calc, setCalc] = useState<Record<string, { carga: string; indice: string; pmax: string }>>(() =>
     Object.fromEntries(
       ejes.map((e) => {
-        const medida = e.posiciones.map((p) => montados.get(p)?.medida).find(Boolean)
+        const ns = e.posiciones.map((p) => montados.get(p)).filter((n): n is Neumatico => !!n)
+        const medida = ns.map((n) => n.medida).find(Boolean)
         const t = buscarMedida(medida)
-        return [e.clave, { carga: '', indice: t?.indice ?? '', pmax: t?.presionMax ? String(t.presionMax) : '' }]
+        // Primero lo anotado en los neumáticos montados; si no, lo típico de la medida
+        const indice = ns.map((n) => n.indice_carga).find(Boolean) ?? t?.indice ?? ''
+        const pmax = ns.map((n) => n.presion_max_psi).find((x) => x != null) ?? t?.presionMax
+        return [e.clave, { carga: '', indice, pmax: pmax != null ? String(pmax) : '' }]
       }),
     ),
   )
