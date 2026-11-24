@@ -935,6 +935,7 @@ export function FormEstadoInicial({ activo, comp, onCerrar }: { activo: Activo; 
   const [modo, setModo] = useState<'recorrido' | 'lectura'>('recorrido')
   const [valor, setValor] = useState('')
   const [fecha, setFecha] = useState('')
+  const [cada, setCada] = useState(txt(u === 'km' ? comp.intervalo_km : comp.intervalo_horas))
   const { error, enviando, enviar } = useEnvio(onCerrar)
   const v = num(valor)
   const lecturaCambio = v == null ? null : modo === 'recorrido' ? (actual != null ? actual - v : null) : v
@@ -967,7 +968,12 @@ export function FormEstadoInicial({ activo, comp, onCerrar }: { activo: Activo; 
                 costo_lubricante: 0, costo_filtros: 0, costo_mano_obra: 0, costo_otros: 0,
                 notas: 'Estado inicial (aproximado): último cambio antes de usar la app',
               } as Partial<Servicio>)
-              await guardar('compartimientos', { ...comp, producto: fluido.producto.trim(), producto_codigo: fluido.codigo })
+              await guardar('compartimientos', {
+                ...comp,
+                producto: fluido.producto.trim(),
+                producto_codigo: fluido.codigo,
+                ...(u === 'km' ? { intervalo_km: num(cada) ?? comp.intervalo_km } : { intervalo_horas: num(cada) ?? comp.intervalo_horas }),
+              })
             })
           }
         />
@@ -990,6 +996,9 @@ export function FormEstadoInicial({ activo, comp, onCerrar }: { activo: Activo; 
         </Campo>
         <Campo etiqueta="Fecha aproximada del cambio (opcional)">
           <input type="date" value={fecha} max={hoyISO()} onChange={(e) => setFecha(e.target.value)} />
+        </Campo>
+        <Campo etiqueta={`Se cambia cada (${u})`}>
+          <input inputMode="numeric" value={cada} onChange={(e) => setCada(e.target.value)} placeholder={u === 'km' ? 'Ej.: 10000' : 'Ej.: 250'} />
         </Campo>
       </div>
       {actual != null && lecturaCambio != null && lecturaCambio >= 0 && lecturaCambio <= actual && (

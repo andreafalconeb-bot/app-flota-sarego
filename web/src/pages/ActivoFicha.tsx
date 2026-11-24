@@ -152,6 +152,15 @@ function Fluidos({ activo }: { activo: Activo }) {
                     )}
                   </div>
                 )}
+                {p.ultimo && e.puedeEscribir && (!c.producto || !p.intervalo) && (
+                  <div className="aviso chico pila" style={{ gap: 6 }}>
+                    <span>
+                      Falta {[!c.producto && 'el fluido que tiene en uso', !p.intervalo && 'cada cuánto se cambia'].filter(Boolean).join(' y ')}
+                      {!p.intervalo ? ' para calcular el próximo cambio.' : '.'}
+                    </span>
+                    <button className="chico primario" style={{ alignSelf: 'flex-start' }} onClick={() => setEditar(c)}>Completar</button>
+                  </div>
+                )}
                 {/* Versión gratis: sin alarmas, solo el dato para verificarlo a mano */}
                 {!e.tiene('alarmas') && (p.vence != null || p.venceFecha) && (
                   <span className="chico">
