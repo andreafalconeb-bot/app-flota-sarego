@@ -1007,6 +1007,12 @@ export function FormEstadoInicial({ activo, comp, onCerrar }: { activo: Activo; 
           <input inputMode="numeric" value={cada} onChange={(e) => setCada(e.target.value)} placeholder={u === 'km' ? 'Ej.: 10000' : 'Ej.: 250'} />
         </Campo>
       </div>
+      {actual != null && lecturaCambio != null && num(cada) != null && actual - lecturaCambio >= num(cada)! && (
+        <div className="aviso alerta chico">
+          Ojo: lleva {numero(actual - lecturaCambio)} {u} y se cambia cada {numero(num(cada)!)} {u}, así que el cambio queda vencido desde hoy.
+          Revisa que “desde el último cambio” no sea el intervalo.
+        </div>
+      )}
       {actual != null && lecturaCambio != null && lecturaCambio >= 0 && lecturaCambio <= actual && (
         <div className="aviso ok chico">
           Último cambio a los {numero(lecturaCambio)} {u} · lleva {numero(actual - lecturaCambio)} {u} con este fluido.

@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useEmpresa } from '../lib/empresa'
-import { GRUPOS_TIPO, TIPOS, etiqueta } from '../lib/catalogos'
-import { fecha, numero } from '../lib/formato'
+import { COMPONENTES, GRUPOS_TIPO, TIPOS, etiqueta } from '../lib/catalogos'
+import { fecha, numero, textoRestante } from '../lib/formato'
 import { proximoCambio, type EstadoServicio } from '../lib/calculos'
 import { FormActivo } from '../components/formularios'
 import { Pill, Vacio } from '../components/ui'
@@ -23,9 +23,19 @@ export default function Activos() {
       .filter((a) => (inactivos || a.activo) && (!tipo || a.tipo === tipo))
       .filter((a) => !t || [a.codigo, a.placa, a.marca, a.modelo, a.serial].some((x) => (x ?? '').toLowerCase().includes(t)))
       .map((a) => {
-        const estados = e.datos.compartimientos.filter((c) => c.activo_id === a.id).map((c) => proximoCambio(c, a, e.datos.servicios).estado)
-        const peor = ORDEN.find((o) => estados.includes(o)) ?? 'sin_datos'
-        return { a, peor }
+        const comps = e.datos.compartimientos.filter((c) => c.activo_id === a.id).map((c) => ({ c, p: proximoCambio(c, a, e.datos.servicios) }))
+        const peor = ORDEN.find((o) => comps.some((x) => x.p.estado === o)) ?? 'sin_datos'
+        // Cuáles compartimientos y por qué (Andrea: "¿cuál fluido está vencido? ¿en base a qué?")
+        const cuales = comps.filter((x) => x.p.estado === peor && (peor === 'vencido' || peor === 'proximo')).map(({ c, p }) => {
+          const nombre = etiqueta(COMPONENTES, c.componente)
+          const motivo = p.restante != null && (p.diasRestantes == null || p.restante <= 0 || p.restante <= (p.intervalo ?? 0) * 0.1)
+            ? textoRestante(p.restante, p.unidad)
+            : p.diasRestantes != null
+              ? p.diasRestantes <= 0 ? `vencido por fecha (${fecha(p.venceFecha)})` : `vence el ${fecha(p.venceFecha)}`
+              : ''
+          return { nombre, motivo, ayuda: `${nombre}: último cambio ${p.ultimo ? fecha(p.ultimo.fecha) : '—'}${p.vence != null ? `, toca a los ${numero(p.vence)} ${p.unidad === 'km' ? 'km' : 'h'}` : ''}${p.venceFecha ? ` o el ${fecha(p.venceFecha)}` : ''}; ${motivo}` }
+        })
+        return { a, peor, cuales }
       })
       .sort((x, y) => x.a.codigo.localeCompare(y.a.codigo, 'es', { numeric: true }))
   }, [e.datos, texto, tipo, inactivos])
@@ -66,7 +76,7 @@ export default function Activos() {
               <tr><th>Unidad</th><th>Tipo</th><th>Marca y modelo</th><th>Lectura</th><th>Aceite</th></tr>
             </thead>
             <tbody>
-              {filas.map(({ a, peor }) => (
+              {filas.map(({ a, peor, cuales }) => (
                 <tr key={a.id} className="clic" onClick={() => navegar(a.id)}>
                   <td>
                     <b>{a.codigo}</b> {!a.activo && <Pill>Inactivo</Pill>}
@@ -81,8 +91,14 @@ export default function Activos() {
                   </td>
                   <td>
                     {!alarmas && peor !== 'sin_datos' && <span className="sec chico">Ver en la ficha</span>}
-                    {alarmas && peor === 'vencido' && <Pill tono="critico">Cambio vencido</Pill>}
-                    {alarmas && peor === 'proximo' && <Pill tono="alerta">Cambio próximo</Pill>}
+                    {alarmas && (peor === 'vencido' || peor === 'proximo') && (
+                      <div title={cuales.map((x) => x.ayuda).join('\n')}>
+                        <Pill tono={peor === 'vencido' ? 'critico' : 'alerta'}>{peor === 'vencido' ? 'Cambio vencido' : 'Cambio próximo'}</Pill>
+                        {cuales.map((x) => (
+                          <div key={x.nombre} className="chico">{x.nombre}{x.motivo ? <span className="sec"> · {x.motivo}</span> : null}</div>
+                        ))}
+                      </div>
+                    )}
                     {alarmas && peor === 'ok' && <Pill tono="ok">Al día</Pill>}
                     {peor === 'sin_datos' && <span className="sec chico">Sin intervalo</span>}
                   </td>
