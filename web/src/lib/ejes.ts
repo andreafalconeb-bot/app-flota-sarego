@@ -55,3 +55,9 @@ export function nombrePosicion(pos: string): string {
   if (!m) return pos
   return `Eje ${m[1]}, ${LADOS[m[2]] ?? m[2]}`
 }
+
+/** Eje de una posición: "2IE" → "2"; el repuesto es "R". */
+export function ejeDe(pos: string): string {
+  if (pos === 'R') return 'R'
+  return /^(\d+)/.exec(pos)?.[1] ?? pos
+}

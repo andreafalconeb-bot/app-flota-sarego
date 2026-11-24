@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
+import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, presionIdeal, datosCaucho, proximoCambio, tramosConsumo } from './calculos'
 import { aplicar } from './datos'
 import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type Servicio } from './tipos'
 
@@ -264,5 +264,13 @@ describe('presión encontrada y dejada', () => {
     expect(fugaLenta([l('2026-11-01', 90), l('2026-11-15', 95)])).toBe(true)
     expect(fugaLenta([l('2026-11-01', 90), l('2026-11-15', 108)])).toBe(false)
     expect(fugaLenta([l('2026-11-15', 90)])).toBe(false)
+  })
+})
+
+describe('presionIdeal', () => {
+  it('la del activo por eje manda sobre la del neumático', () => {
+    expect(presionIdeal({ presiones_eje: { '1': 105, R: 110 } }, '1', { presion_ideal_psi: 120 })).toEqual({ psi: 105, origen: 'activo' })
+    expect(presionIdeal({ presiones_eje: { '1': 105 } }, '2', { presion_ideal_psi: 120 })).toEqual({ psi: 120, origen: 'fabricante' })
+    expect(presionIdeal({}, '2', null)).toEqual({ psi: null, origen: null })
   })
 })

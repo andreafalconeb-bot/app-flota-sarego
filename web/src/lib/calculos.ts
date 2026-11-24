@@ -478,6 +478,22 @@ export function fugaLenta(lecturas: { fecha: string; presion_psi: number | null;
   return ultimas.length === 2 && ultimas.every((l) => (desviacionPresion(l.presion_psi, l.presion_ideal_psi) ?? 0) <= -0.1)
 }
 
+/**
+ * Presión ideal de una posición (Andrea, 24/nov/2026): la que se calculó
+ * para el trabajo de ese activo, por eje (igual en todo el eje); si el
+ * activo no la tiene, la del neumático (fabricante).
+ */
+export function presionIdeal(
+  activo: { presiones_eje?: Record<string, number> | null },
+  eje: string,
+  neumatico: { presion_ideal_psi: number | null } | null | undefined,
+): { psi: number | null; origen: 'activo' | 'fabricante' | null } {
+  const delActivo = activo.presiones_eje?.[eje]
+  if (delActivo != null && !isNaN(Number(delActivo))) return { psi: Number(delActivo), origen: 'activo' }
+  if (neumatico?.presion_ideal_psi != null) return { psi: neumatico.presion_ideal_psi, origen: 'fabricante' }
+  return { psi: null, origen: null }
+}
+
 export function minimo(valores: (number | null | undefined)[]): number | null {
   const v = valores.filter((x): x is number => x != null && !isNaN(x))
   return v.length ? Math.min(...v) : null
