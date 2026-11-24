@@ -12,7 +12,7 @@ export interface Fluido {
   categoria: string | null
 }
 
-/** Lo elegido: producto (texto) y su SKU de SAREGO (null = competencia). */
+/** Lo elegido: producto (texto) y su SKU de SAREGO (null = otro proveedor). */
 export interface Eleccion {
   producto: string
   codigo: string | null
@@ -95,7 +95,7 @@ export function SelectorFluido({ valor, onCambio, componente }: {
   if (otro) {
     return (
       <div className="pila" style={{ gap: 4 }}>
-        <input value={valor.producto} onChange={(e) => onCambio({ producto: e.target.value, codigo: null })} placeholder="Marca y producto de la competencia (ej.: Shell Rimula R4 15W-40)" />
+        <input value={valor.producto} onChange={(e) => onCambio({ producto: e.target.value, codigo: null })} placeholder="Marca y producto de otro proveedor (ej.: Shell Rimula R4 15W-40)" />
         <button type="button" className="chico" style={{ alignSelf: 'flex-start' }} onClick={() => { setOtro(false); onCambio({ producto: '', codigo: null }) }}>
           Elegir del catálogo de SAREGO
         </button>
@@ -136,7 +136,7 @@ export function SelectorFluido({ valor, onCambio, componente }: {
           ))}
           {lista.length === 0 && <span className="sec chico" style={{ padding: 6 }}>Nada coincide en el catálogo de SAREGO.</span>}
           <button type="button" className="fluido-otro" onClick={() => { setOtro(true); setAbierto(false); onCambio({ producto: q, codigo: null }) }}>
-            Otro (competencia): escribirlo a mano
+            Otro proveedor: escribirlo a mano
           </button>
         </div>
       )}

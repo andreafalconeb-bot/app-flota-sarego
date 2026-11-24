@@ -129,7 +129,7 @@ function Fluidos({ activo }: { activo: Activo }) {
                 <div className="en-uso">
                   <span className="sec chico">En uso</span>
                   <b>{c.producto ?? 'Sin indicar'}</b>
-                  {c.producto && (c.producto_codigo ? <Pill tono="ok">SAREGO</Pill> : <Pill>Competencia</Pill>)}
+                  {c.producto && (c.producto_codigo ? <Pill tono="ok">SAREGO</Pill> : <Pill>Otro proveedor</Pill>)}
                   {c.capacidad_l ? <span className="sec chico">· {numero(c.capacidad_l, 1)} L</span> : null}
                 </div>
                 <span className="chico">

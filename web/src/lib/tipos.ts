@@ -94,7 +94,7 @@ export interface Compartimiento extends Base {
   activo_id: string
   componente: string
   capacidad_l: number | null
-  /** Fluido en uso (el del último cambio) y su SKU de SAREGO (null = competencia) */
+  /** Fluido en uso (el del último cambio) y su SKU de SAREGO (null = otro proveedor) */
   producto: string | null
   producto_codigo?: string | null
   intervalo_km: number | null
@@ -118,7 +118,7 @@ export interface Servicio extends Base {
   km: number | null
   horas: number | null
   producto: string | null
-  /** SKU de SAREGO del producto (null = competencia) */
+  /** SKU de SAREGO del producto (null = otro proveedor) */
   producto_codigo?: string | null
   litros: number | null
   filtros: string | null
