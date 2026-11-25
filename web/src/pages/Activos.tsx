@@ -6,6 +6,7 @@ import { fecha, numero, textoRestante } from '../lib/formato'
 import { estadoLectura, proximoCambio, type EstadoServicio } from '../lib/calculos'
 import { FormActivo } from '../components/formularios'
 import { Pill, Vacio } from '../components/ui'
+import { SEMAFORO, peorAnalisis } from '../components/analisis'
 
 const ORDEN: EstadoServicio[] = ['vencido', 'proximo', 'ok', 'sin_datos']
 
@@ -107,6 +108,15 @@ export default function Activos() {
                     )}
                     {alarmas && peor === 'ok' && <Pill tono="ok">Al día</Pill>}
                     {peor === 'sin_datos' && <span className="sec chico">Sin intervalo</span>}
+                    {(() => {
+                      const pa = peorAnalisis(e.datos.analisis ?? [], a.id)
+                      if (pa !== 'critico' && pa !== 'precaucion') return null
+                      return (
+                        <div style={{ marginTop: 4 }}>
+                          <Pill tono={SEMAFORO[pa].tono}>Análisis de aceite: {SEMAFORO[pa].texto.toLowerCase()}</Pill>
+                        </div>
+                      )
+                    })()}
                   </td>
                 </tr>
               ))}

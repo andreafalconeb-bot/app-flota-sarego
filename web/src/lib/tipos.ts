@@ -260,12 +260,50 @@ export interface InspeccionNeumatico {
   observacion: string | null
 }
 
+export type Semaforo = 'normal' | 'precaucion' | 'critico'
+
+/** Un parámetro del laboratorio (viscosidad, hierro, silicio…) */
+export interface ResultadoAnalisis {
+  codigo: string
+  nombre: string
+  unidad: string | null
+  grupo: string
+  valor: number | null
+  valor_texto: string | null
+  semaforo: Semaforo | null
+}
+
+/** Análisis de aceite usado que hizo SAREGO (0140). Viene de la B2B y
+ * el cliente solo lo ve. */
+export interface Analisis {
+  id: string
+  empresa_id: string
+  activo_id: string
+  compartimiento_id: string | null
+  componente: string
+  numero: string | null
+  laboratorio: string | null
+  numero_lab: string | null
+  fecha_toma: string | null
+  fecha_resultado: string | null
+  horas_equipo: number | null
+  km_equipo: number | null
+  horas_aceite: number | null
+  km_aceite: number | null
+  lubricante: string | null
+  semaforo: Semaforo | null
+  interpretacion: string | null
+  recomendacion: string | null
+  resultados: ResultadoAnalisis[]
+}
+
 /** Todo lo de una empresa, tal como queda en la base local. */
 export interface Datos {
   sitios: Sitio[]
   activos: Activo[]
   lecturas: Lectura[]
   compartimientos: Compartimiento[]
+  analisis: Analisis[]
   servicios: Servicio[]
   combustible: Carga[]
   costos: Costo[]
@@ -283,6 +321,7 @@ export const TABLAS: Record<Coleccion, string> = {
   activos: 'flota_activos',
   lecturas: 'flota_lecturas',
   compartimientos: 'flota_compartimientos',
+  analisis: 'flota_analisis',
   servicios: 'flota_servicios',
   combustible: 'flota_combustible',
   costos: 'flota_costos',
@@ -295,13 +334,13 @@ export const TABLAS: Record<Coleccion, string> = {
 
 /** Orden de subida y bajada: primero lo que otras tablas referencian. */
 export const ORDEN_COLECCIONES: Coleccion[] = [
-  'sitios', 'activos', 'lecturas', 'compartimientos', 'servicios', 'combustible',
+  'sitios', 'activos', 'lecturas', 'compartimientos', 'analisis', 'servicios', 'combustible',
   'costos', 'facturas', 'neumaticos', 'movimientos', 'inspecciones', 'inspeccionNeumaticos',
 ]
 
 export function datosVacios(): Datos {
   return {
-    sitios: [], activos: [], lecturas: [], compartimientos: [], servicios: [], combustible: [],
+    sitios: [], activos: [], lecturas: [], compartimientos: [], analisis: [], servicios: [], combustible: [],
     costos: [], facturas: [], neumaticos: [], movimientos: [], inspecciones: [], inspeccionNeumaticos: [],
   }
 }

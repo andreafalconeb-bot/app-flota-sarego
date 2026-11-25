@@ -22,6 +22,9 @@
   sincronización completa). Los cálculos están en `src/lib/calculos.ts`
   con pruebas. Si se agrega una tabla `flota_*` con datos de la empresa,
   se suma a `TABLAS` y `ORDEN_COLECCIONES` en `src/lib/tipos.ts`.
+- Análisis de aceite usado: los hace SAREGO en la B2B y llegan a
+  `flota_analisis` al exportar la cuenta ganada y después solos
+  (migración 0140). El cliente solo los ve (`src/components/analisis.tsx`).
 - Todo texto de la interfaz en español de Venezuela, tuteando.
 - **Publicación:** Andrea (23/nov/2026) autorizó que Claude publique solo
   los cambios de esta app, igual que la B2B: abrir el PR, unirlo a
