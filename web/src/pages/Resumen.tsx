@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useEmpresa } from '../lib/empresa'
-import { COMPONENTES, TIPOS, etiqueta } from '../lib/catalogos'
+import { COMPONENTES, etiqueta } from '../lib/catalogos'
 import { dinero, fecha, fechaHora, textoRestante } from '../lib/formato'
-import { estadoPresion, estadoProfundidad, gastoPorCuenta, presionActual, proximoCambio, type ProximoCambio } from '../lib/calculos'
+import { DIAS_LECTURA, estadoLectura, estadoPresion, estadoProfundidad, gastoPorCuenta, presionActual, proximoCambio, type ProximoCambio } from '../lib/calculos'
 import { nombrePosicion } from '../lib/ejes'
 import { ultimasMediciones } from '../components/neumaticos'
 import { Metrica, Pill, SoloPago, Vacio } from '../components/ui'
@@ -28,16 +28,29 @@ export default function Resumen() {
   }, [datos])
 
   const llantas = useMemo(() => {
+    const fechas = new Map(datos.inspecciones.map((i) => [i.id, i]))
+    const profundidadAnterior = (neumaticoId: string | null, pos: string, activoId: string): number | null => {
+      let mejor: { f: string; mm: number } | null = null
+      for (const x of datos.inspeccionNeumaticos) {
+        const i = fechas.get(x.inspeccion_id)
+        if (!i || i.activo_id !== activoId || x.profundidad_min_mm == null || x.posicion !== pos || x.neumatico_id !== neumaticoId) continue
+        if (!mejor || i.fecha > mejor.f) mejor = { f: i.fecha, mm: x.profundidad_min_mm }
+      }
+      return mejor?.mm ?? null
+    }
     const lista: { activo: Activo; pos: string; texto: string; critico: boolean }[] = []
     for (const a of activos) {
       for (const [pos, m] of ultimasMediciones(a.id, datos)) {
+        // Si la última inspección no midió la profundidad, vale la última medida de ese mismo neumático
+        const mm = m.profundidad_min_mm ?? profundidadAnterior(m.neumatico_id, pos, a.id)
         const ep = estadoPresion(presionActual(m), m.presion_ideal_psi)
-        const ed = estadoProfundidad(m.profundidad_min_mm)
-        if (ep === 'ok' && ed === 'ok') continue
-        if (ep === 'sin_dato' && ed === 'sin_dato') continue
+        const ed = estadoProfundidad(mm)
+        // Solo lo que de verdad está mal: un dato que falta no es una alerta
+        const mal = (x: string) => x === 'alerta' || x === 'critico'
+        if (!mal(ep) && !mal(ed)) continue
         const partes = []
         if (ep === 'alerta' || ep === 'critico') partes.push(`${presionActual(m)} psi (ideal ${m.presion_ideal_psi})`)
-        if (ed === 'alerta' || ed === 'critico') partes.push(`${m.profundidad_min_mm} mm`)
+        if (ed === 'alerta' || ed === 'critico') partes.push(`${mm} mm`)
         lista.push({ activo: a, pos, texto: partes.join(' · '), critico: ep === 'critico' || ed === 'critico' })
       }
     }
@@ -165,18 +178,46 @@ export default function Resumen() {
 
       {activos.length > 0 && (
         <section className="tarjeta pila">
-          <h2>Lecturas</h2>
-          <span className="sec chico">Activos sin lectura en más de 15 días.</span>
+          <h2>Lecturas semanales</h2>
+          <span className="sec chico">Cada activo pide odómetro u horómetro cada {DIAS_LECTURA} días. Los que están en inactividad no la piden.</span>
           {(() => {
-            const viejos = activos.filter((a) => !a.lectura_at || Date.now() - new Date(a.lectura_at).getTime() > 15 * 86_400_000)
-            return viejos.length ? (
-              <div className="fila">
-                {viejos.map((a) => (
-                  <Link key={a.id} to={`${base}/activos/${a.id}`} className="pill acento">{a.codigo} · {etiqueta(TIPOS, a.tipo)}</Link>
-                ))}
-              </div>
-            ) : (
-              <span className="chico">Todos al día.</span>
+            const estados = activos.map((a) => ({ a, l: estadoLectura(a) }))
+            const pendientes = estados.filter((x) => x.l.estado === 'pendiente').sort((x, y) => (y.l.dias ?? 1e9) - (x.l.dias ?? 1e9))
+            const parados = estados.filter((x) => x.l.estado === 'inactivo')
+            const alDia = estados.filter((x) => x.l.estado === 'al_dia').length
+            const total = alDia + pendientes.length
+            return (
+              <>
+                {total > 0 && (
+                  <div className="barra-lecturas" title={`${alDia} al día de ${total}`}>
+                    <div style={{ width: `${(alDia / total) * 100}%` }} />
+                    <span>{alDia} de {total} al día</span>
+                  </div>
+                )}
+                {pendientes.length ? (
+                  <div className="fila">
+                    {pendientes.map(({ a, l }) => (
+                      <Link key={a.id} to={`${base}/activos/${a.id}`} className="pill alerta">
+                        {a.codigo} · {l.dias == null ? 'nunca' : `hace ${l.dias} días`}
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="chico">Todos al día.</span>
+                )}
+                {parados.length > 0 && (
+                  <div className="pila" style={{ gap: 4 }}>
+                    <span className="sec chico">En inactividad (solo vencen sus fluidos por tiempo):</span>
+                    <div className="fila">
+                      {parados.map(({ a }) => (
+                        <Link key={a.id} to={`${base}/activos/${a.id}`} className="pill inactivo">
+                          {a.codigo} · desde {a.inactivo_desde ? fecha(a.inactivo_desde) : '—'}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )
           })()}
         </section>

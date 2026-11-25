@@ -341,3 +341,20 @@ dialog.modal::backdrop { background: rgb(10 20 26 / .45); }
   .tarjeta.comp-vencido { background: #3a3110; border-color: #b8900a; }
   .tarjeta.comp-proximo { background: #2e2a14; border-color: #7a6a20; }
 }
+
+/* Lectura semanal e inactividad */
+.pill.inactivo { background: #e8eef6; color: #3d5a80; border: 1px dashed #8aa4c4; }
+.barra-lecturas { position: relative; height: 22px; border-radius: 999px; background: var(--alerta-suave); overflow: hidden; }
+.barra-lecturas > div { height: 100%; background: var(--ok); opacity: .85; }
+.barra-lecturas > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 700; color: var(--texto); }
+.aviso-lectura { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 14px; border-radius: 12px; background: #fff8d6; border: 1px solid #f0d36b; color: #6b5300; }
+.aviso-lectura .icono-reloj { font-size: 1.6rem; line-height: 1; }
+.aviso-inactivo { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 14px; border-radius: 12px; background: #e8eef6; border: 1px dashed #8aa4c4; color: #2c4466; }
+.semana { display: inline-flex; gap: 3px; }
+.semana i { width: 10px; height: 10px; border-radius: 3px; background: var(--ok); display: inline-block; }
+.semana i.gastado { background: #e0c040; }
+.semana i.vencido { background: var(--alerta); }
+@media (prefers-color-scheme: dark) {
+  .aviso-lectura { background: #3a3110; border-color: #7a6520; color: #f3e3a0; }
+  .aviso-inactivo, .pill.inactivo { background: #1e2a3a; color: #b8cbe4; border-color: #4a6280; }
+}

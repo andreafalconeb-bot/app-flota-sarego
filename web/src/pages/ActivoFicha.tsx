@@ -4,10 +4,11 @@ import { useEmpresa } from '../lib/empresa'
 import { ADITIVOS, COMBUSTIBLES, COMPONENTES, CUENTAS, MEDIDORES, TIPOS, TIPOS_COSTO, TIPOS_SERVICIO, etiqueta } from '../lib/catalogos'
 import { PLANTILLAS } from '../lib/ejes'
 import { dinero, fecha, fechaHora, hoyISO, numero, textoRestante } from '../lib/formato'
-import { AHORRO_PROMETIDO, compararAditivo, costoPorUso, proximoCambio, totalServicio, tramosConsumo, unidadPrincipal } from '../lib/calculos'
+import { AHORRO_PROMETIDO, DIAS_LECTURA, compararAditivo, estadoLectura, costoPorUso, proximoCambio, totalServicio, tramosConsumo, unidadPrincipal } from '../lib/calculos'
 import type { Activo, Compartimiento } from '../lib/tipos'
 import { FormActivo, FormCarga, FormCompartimiento, FormCosto, FormEstadoInicial, FormLectura, FormServicio } from '../components/formularios'
 import { NeumaticosActivo } from '../components/neumaticos'
+import { AvisoLectura, FormInactividad, Semana } from '../components/inactividad'
 import { Campo, ErrorMsg, Metrica, Pill, Selector, SoloPago, Vacio, mensajeError } from '../components/ui'
 
 const PESTANAS = { fluidos: 'Fluidos', combustible: 'Combustible', neumaticos: 'Neumáticos', costos: 'Costos', lecturas: 'Lecturas', datos: 'Datos' }
@@ -34,7 +35,8 @@ export default function ActivoFicha() {
         <div>
           <div className="sec chico"><Link to={`/e/${e.empresa!.id}/activos`}>Activos</Link> /</div>
           <h1>
-            {activo.codigo} {!activo.activo && <Pill>Inactivo</Pill>}
+            {activo.codigo} {!activo.activo && <Pill>De baja</Pill>}
+            {activo.activo && activo.en_inactividad && <span className="pill inactivo">En inactividad</span>}
           </h1>
           <div className="sec chico">
             {etiqueta(TIPOS, activo.tipo)} · {[activo.marca, activo.modelo, activo.anio].filter(Boolean).join(' ') || 'sin marca'}
@@ -50,10 +52,20 @@ export default function ActivoFicha() {
               {activo.km_actual == null && activo.horas_actual == null && '—'}
             </div>
             <div className="e">{activo.lectura_at ? 'Lectura del ' + fecha(activo.lectura_at) : 'Sin lectura'}</div>
+            {(() => {
+              const l = estadoLectura(activo)
+              return l.estado === 'al_dia' ? (
+                <div className="e" title={`Cada ${DIAS_LECTURA} días se pide la lectura`}>
+                  <Semana dias={l.dias} /> próxima en {l.faltan} {l.faltan === 1 ? 'día' : 'días'}
+                </div>
+              ) : null
+            })()}
           </div>
           {e.puedeEscribir && <button className="primario" onClick={() => setLectura(true)}>Registrar lectura</button>}
         </div>
       </div>
+
+      {activo.activo && <AvisoLectura activo={activo} onLectura={() => setLectura(true)} />}
 
       <div className="pestanas" role="tablist">
         {Object.entries(PESTANAS).map(([k, v]) => (
@@ -427,8 +439,10 @@ function Lecturas({ activo }: { activo: Activo }) {
 function Datos({ activo }: { activo: Activo }) {
   const e = useEmpresa()
   const [editar, setEditar] = useState(false)
+  const [inactividad, setInactividad] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const filas: [string, string][] = [
+    ['Estado', !activo.activo ? 'De baja' : activo.en_inactividad ? `En inactividad${activo.inactivo_desde ? ` desde el ${fecha(activo.inactivo_desde)}` : ''}${activo.inactividad_motivo ? ` (${activo.inactividad_motivo})` : ''}` : 'En operación'],
     ['Tipo', etiqueta(TIPOS, activo.tipo)],
     ['Marca y modelo', [activo.marca, activo.modelo].filter(Boolean).join(' ') || '—'],
     ['Año', activo.anio ? String(activo.anio) : '—'],
@@ -453,6 +467,13 @@ function Datos({ activo }: { activo: Activo }) {
       {e.puedeEscribir && (
         <div className="fila">
           <button className="primario" onClick={() => setEditar(true)}>Editar</button>
+          {activo.activo && (activo.en_inactividad ? (
+            <button onClick={() => void e.guardar('activos', { ...activo, en_inactividad: false, inactivo_desde: null, inactividad_motivo: null }).catch((x) => setError(mensajeError(x)))}>
+              Volver a operación
+            </button>
+          ) : (
+            <button onClick={() => setInactividad(true)} title="Parado: no pide lectura y sus fluidos solo vencen por tiempo">Poner en inactividad</button>
+          ))}
           {e.esAdminEmpresa && (
             <button
               className={activo.activo ? 'peligro' : ''}
@@ -464,6 +485,7 @@ function Datos({ activo }: { activo: Activo }) {
         </div>
       )}
       {editar && <FormActivo activo={activo} abierto onCerrar={() => setEditar(false)} />}
+      {inactividad && <FormInactividad activo={activo} abierto onCerrar={() => setInactividad(false)} />}
     </div>
   )
 }
