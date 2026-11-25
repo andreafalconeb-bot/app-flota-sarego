@@ -60,6 +60,13 @@ export const COMPONENTES: Mapa = {
   frenos: 'Frenos (líquido)',
   refrigerante: 'Refrigerante',
   engrase: 'Engrase (puntos de grasa)',
+  // Los de planta que vienen de los puntos de muestreo de la B2B
+  reductor: 'Reductor',
+  compresor: 'Compresor',
+  turbina: 'Turbina',
+  transformador: 'Transformador',
+  cojinete: 'Cojinete',
+  otro: 'Otro',
 }
 
 /** Compartimientos que se proponen al crear un activo, según su tipo. */

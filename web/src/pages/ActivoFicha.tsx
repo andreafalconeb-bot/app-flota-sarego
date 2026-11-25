@@ -8,10 +8,11 @@ import { AHORRO_PROMETIDO, DIAS_LECTURA, compararAditivo, estadoLectura, costoPo
 import type { Activo, Compartimiento } from '../lib/tipos'
 import { FormActivo, FormCarga, FormCompartimiento, FormCosto, FormEstadoInicial, FormLectura, FormServicio } from '../components/formularios'
 import { NeumaticosActivo } from '../components/neumaticos'
+import { AnalisisActivo, UltimoAnalisis } from '../components/analisis'
 import { AvisoLectura, FormInactividad, Semana } from '../components/inactividad'
 import { Campo, ErrorMsg, Metrica, Pill, Selector, SoloPago, Vacio, mensajeError } from '../components/ui'
 
-const PESTANAS = { fluidos: 'Fluidos', combustible: 'Combustible', neumaticos: 'Neumáticos', costos: 'Costos', lecturas: 'Lecturas', datos: 'Datos' }
+const PESTANAS = { fluidos: 'Fluidos', analisis: 'Análisis de aceite', combustible: 'Combustible', neumaticos: 'Neumáticos', costos: 'Costos', lecturas: 'Lecturas', datos: 'Datos' }
 
 export default function ActivoFicha() {
   const { activoId } = useParams()
@@ -76,6 +77,7 @@ export default function ActivoFicha() {
       </div>
 
       {pestana === 'fluidos' && <Fluidos activo={activo} />}
+      {pestana === 'analisis' && <AnalisisActivo activo={activo} />}
       {pestana === 'combustible' && <CombustibleActivo activo={activo} />}
       {pestana === 'neumaticos' && <NeumaticosActivo activo={activo} />}
       {pestana === 'costos' && <CostosActivo activo={activo} />}
@@ -185,6 +187,7 @@ function Fluidos({ activo }: { activo: Activo }) {
                     {p.venceFecha && ` el ${fecha(p.venceFecha)}`}
                   </span>
                 )}
+                <UltimoAnalisis comp={c} />
                 {e.tiene('intervalo_sugerido') && sugerido && (
                   <div className="aviso chico">
                     <b>SAREGO sugiere cada {numero(sugerido)} {unidadTxt(u)}</b>
