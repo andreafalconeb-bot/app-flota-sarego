@@ -1,5 +1,6 @@
 // Neumáticos de un activo: diagrama de ejes, montaje / desmontaje /
 // rotación e inspección de presión y profundidad (fase 1, básico).
+import { TallerNeumaticos } from './taller'
 import { useMemo, useState } from 'react'
 import { useEmpresa } from '../lib/empresa'
 import { hoyISO, fecha, nombreNeumatico, serialNeumatico } from '../lib/formato'
@@ -50,6 +51,7 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
   const { datos, puedeEscribir } = useEmpresa()
   const [posicion, setPosicion] = useState<string | null>(null)
   const [inspeccionar, setInspeccionar] = useState(false)
+  const [taller, setTaller] = useState(false)
   const plantilla = PLANTILLAS[activo.configuracion ?? ''] ?? PLANTILLAS.ninguna
   const montados = useMemo(
     () => new Map(datos.neumaticos.filter((n) => n.activo_id === activo.id && n.estado === 'montado').map((n) => [n.posicion!, n])),
@@ -101,8 +103,11 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
     <div className="pila" style={{ gap: 12 }}>
       <div className="fila-entre">
         <span className="sec chico">{plantilla.nombre}. Toca una posición para montar, desmontar o rotar.</span>
-        {puedeEscribir && montados.size > 0 && (
-          <button className="primario" onClick={() => setInspeccionar(true)}>Inspección de presión y profundidad</button>
+        {puedeEscribir && (
+          <div className="fila">
+            <button onClick={() => setTaller(true)}>Taller: montar, desmontar y rotar</button>
+            {montados.size > 0 && <button className="primario" onClick={() => setInspeccionar(true)}>Inspección de presión y profundidad</button>}
+          </div>
         )}
       </div>
       {fugas.length > 0 && (
@@ -115,6 +120,7 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
       <PlantaVehiculo configuracion={activo.configuracion} celda={celda} onElegir={setPosicion} />
       <LeyendaEstados />
       {posicion && <Posicion key={posicion} activo={activo} posicion={posicion} montado={montados.get(posicion) ?? null} onCerrar={() => setPosicion(null)} />}
+      {taller && <TallerNeumaticos activo={activo} onCerrar={() => setTaller(false)} />}
       {inspeccionar && <Inspeccion activo={activo} montados={montados} onCerrar={() => setInspeccionar(false)} />}
       <HistorialInspecciones activo={activo} />
     </div>
