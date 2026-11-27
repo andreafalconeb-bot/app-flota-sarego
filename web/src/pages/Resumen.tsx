@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useEmpresa } from '../lib/empresa'
 import { COMPONENTES, etiqueta } from '../lib/catalogos'
 import { dinero, fecha, fechaHora, textoRestante } from '../lib/formato'
-import { DIAS_LECTURA, estadoLectura, estadoPresion, estadoProfundidad, gastoPorCuenta, presionActual, proximoCambio, type ProximoCambio } from '../lib/calculos'
+import { DIAS_LECTURA, estadoLectura, estadoPresion, estadoProfundidad, gastoPorCuenta, perdidaPorPresion, presionActual, proximoCambio, type ProximoCambio } from '../lib/calculos'
 import { nombrePosicion } from '../lib/ejes'
 import { ultimasMediciones } from '../components/neumaticos'
 import { Metrica, Pill, SoloPago, Vacio } from '../components/ui'
@@ -67,6 +67,13 @@ export default function Resumen() {
     return total + comb
   }, [datos])
 
+  // Dinero perdido por presión en los últimos 3 meses (curva TMC)
+  const perdidaPresion = useMemo(() => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - 3)
+    return [...perdidaPorPresion(datos, d.toISOString().slice(0, 10), new Date().toISOString()).values()].reduce((t, p) => t + p.total, 0)
+  }, [datos])
+
   const vencidos = servicios.filter((s) => s.p.estado === 'vencido').length
   // Alarmas solo en la versión pago (Andrea, 23/nov/2026)
   const alarmas = e.tiene('alarmas')
@@ -94,6 +101,11 @@ export default function Resumen() {
           </>
         )}
         {!e.reportesBloqueados && <Metrica valor={dinero(gastoMes)} etiqueta="Gasto del mes (servicios, facturas y combustible)" />}
+        {!e.reportesBloqueados && perdidaPresion > 0 && (
+          <Link to={`${base}/costos`} style={{ textDecoration: 'none', color: 'inherit' }}>
+            <Metrica valor={dinero(perdidaPresion)} etiqueta="Perdido por presión fuera de la ideal (últimos 3 meses)" tono="alerta" />
+          </Link>
+        )}
       </div>
 
       {activos.length === 0 && (

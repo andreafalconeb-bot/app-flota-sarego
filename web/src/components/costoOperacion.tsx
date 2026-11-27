@@ -5,7 +5,7 @@ import { useEmpresa } from '../lib/empresa'
 import { CUENTAS, etiqueta } from '../lib/catalogos'
 import { dinero, fecha, hoyISO, nombreNeumatico, numero } from '../lib/formato'
 import { nombrePosicion } from '../lib/ejes'
-import { MM_PROYECCION_FIRME, REMANENTE_MM, costoOperacion, proyeccionNeumatico, type ProyeccionNeumatico, type Rubro, type Unidad } from '../lib/calculos'
+import { MM_PROYECCION_FIRME, REMANENTE_MM, costoOperacion, perdidaPorPresion, proyeccionNeumatico, type ProyeccionNeumatico, type Rubro, type Unidad } from '../lib/calculos'
 import type { Activo, Neumatico } from '../lib/tipos'
 import { Metrica, Pill, SoloPago, Vacio } from './ui'
 
@@ -190,6 +190,87 @@ export function ProyeccionNeumaticos({ activo, montados }: { activo: Activo; mon
           </tbody>
         </table>
       </div>
+    </section>
+  )
+}
+
+/** Dinero perdido por presión fuera de la ideal en este activo (curva TMC). */
+export function PerdidaPresionActivo({ activo }: { activo: Activo }) {
+  const e = useEmpresa()
+  const [periodo, setPeriodo] = useState('5')
+  const desde = desdePeriodo(periodo)
+  const r = useMemo(() => perdidaPorPresion(e.datos, desde, hoyISO()).get(activo.id) ?? null, [e.datos, desde, activo.id])
+  if (e.reportesBloqueados) return null
+  const porNeumatico = new Map<string, { pos: string; uso: number; dinero: number; peor: number; tramos: number; sinCosto: boolean }>()
+  for (const t of r?.tramos ?? []) {
+    const f = porNeumatico.get(t.neumaticoId) ?? { pos: t.posicion, uso: 0, dinero: 0, peor: 1, tramos: 0, sinCosto: false }
+    f.pos = t.posicion
+    f.uso += t.uso
+    f.dinero += t.dinero ?? 0
+    f.sinCosto ||= t.dinero == null && t.desgasteExtra > 0
+    if (Math.abs(1 - t.proporcion) > Math.abs(1 - f.peor)) f.peor = t.proporcion
+    f.tramos++
+    porNeumatico.set(t.neumaticoId, f)
+  }
+  const filas = [...porNeumatico.entries()].sort((a, b) => b[1].dinero - a[1].dinero)
+  const dias = desde ? (Date.now() - new Date(desde).getTime()) / 86_400_000 : null
+  return (
+    <section className="tarjeta pila">
+      <div className="fila-entre">
+        <h2>Dinero perdido por presión</h2>
+        <select value={periodo} onChange={(x) => setPeriodo(x.target.value)} style={{ maxWidth: 200 }}>
+          {Object.entries(PERIODOS_COSTO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+      </div>
+      {!r || !r.tramos.length ? (
+        <Vacio>Hacen falta dos inspecciones de presión (o un montaje y una inspección) con {activo.medidor === 'horas' ? 'horómetro' : 'odómetro'} para calcularlo.</Vacio>
+      ) : (
+        <>
+          <div className="grid grid-3">
+            <Metrica valor={dinero(r.total)} etiqueta="Perdido en el periodo" tono={r.total > 0 ? 'alerta' : undefined} />
+            <Metrica valor={dinero(r.desgaste)} etiqueta="Neumáticos gastados de más" />
+            <Metrica valor={dinero(r.combustible)} etiqueta="Combustible de más (estimado)" />
+          </div>
+          {dias != null && dias > 20 && r.total > 0 && (
+            <div className="aviso alerta chico">A este ritmo son cerca de <b>{dinero((r.total / dias) * 365)} al año</b> solo en este activo.</div>
+          )}
+          <div className="tabla-wrap">
+            <table>
+              <thead>
+                <tr><th>Neumático</th><th>Posición</th><th className="num">Peor presión</th><th className="num">Recorrido</th><th className="num">Perdido</th></tr>
+              </thead>
+              <tbody>
+                {filas.map(([id, f]) => {
+                  const n = e.datos.neumaticos.find((x) => x.id === id)
+                  const pct = Math.round((f.peor - 1) * 100)
+                  return (
+                    <tr key={id}>
+                      <td>{n ? nombreNeumatico(n) : '—'}</td>
+                      <td>{nombrePosicion(f.pos)}</td>
+                      <td className="num">
+                        {pct === 0 ? 'en la ideal' : <Pill tono={pct <= -20 ? 'critico' : pct < -5 || pct > 10 ? 'alerta' : undefined}>{pct > 0 ? '+' : ''}{pct} %</Pill>}
+                      </td>
+                      <td className="num">{numero(f.uso)} {un(r.unidad)}</td>
+                      <td className="num">{f.sinCosto && !f.dinero ? <span className="sec chico">sin costo</span> : dinero(f.dinero)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <ul className="sec chico" style={{ margin: 0, paddingLeft: 18 }}>
+            <li>
+              Presión con que rodó cada tramo: el promedio entre la que se dejó en la inspección anterior y la que se encontró en esta (la primera vez, la encontrada).
+            </li>
+            <li>
+              Desgaste (curva TMC): 10 % bajo = 12 % menos vida; 20 % bajo = 30 % menos; 10 % alto = 5 % más desgaste. Lo perdido es ese desgaste de más al costo
+              por {un(r.unidad)} de cada neumático.
+            </li>
+            <li>Combustible: 0,5 % más por cada 10 % de baja presión promedio del activo, a su costo de combustible por {un(r.unidad)} (las fuentes dan de 0,2 a 1 %).</li>
+            {r.sinCosto > 0 && <li>Hay neumáticos sin costo cargado: su desgaste de más no se puede pasar a dinero.</li>}
+          </ul>
+        </>
+      )}
     </section>
   )
 }

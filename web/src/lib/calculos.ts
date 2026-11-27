@@ -1020,3 +1020,162 @@ export function proyeccionNeumatico(
     motivo: null,
   }
 }
+
+// ------------------------------------------------------------
+// Dinero perdido por presión fuera de la ideal
+// ------------------------------------------------------------
+/**
+ * Vida de la banda según la presión con que rodó (presión ÷ ideal), de la
+ * curva de TMC (RP 235A, citada por la prensa del ramo): 10 % por debajo
+ * pierde entre 9 y 16 % de vida (se toma 12 %), 20 % por debajo pierde
+ * 30 %, y 10 % por encima gasta 5 % más. Fuera de 60–120 % se queda en
+ * el extremo: ahí el problema ya no es el desgaste sino la carcasa.
+ */
+export const CURVA_PRESION_VIDA: [number, number][] = [
+  [0.6, 0.34],
+  [0.8, 0.7],
+  [0.9, 0.88],
+  [1, 1],
+  [1.1, 1 / 1.05],
+  [1.2, 1 / 1.1],
+]
+
+/**
+ * Combustible de más por cada 10 % de baja presión promedio del activo.
+ * Las fuentes van de 0,2 % a 1 %; se toma 0,5 %, conservador.
+ */
+export const COMBUSTIBLE_POR_10_BAJO = 0.005
+
+/** Fracción de la vida de la banda que se logra rodando a esa proporción de la presión ideal. */
+export function vidaPorPresion(proporcion: number): number {
+  const c = CURVA_PRESION_VIDA
+  if (proporcion <= c[0][0]) return c[0][1]
+  if (proporcion >= c[c.length - 1][0]) return c[c.length - 1][1]
+  for (let i = 1; i < c.length; i++) {
+    const [x1, y1] = c[i]
+    const [x0, y0] = c[i - 1]
+    if (proporcion <= x1) return y0 + ((proporcion - x0) / (x1 - x0)) * (y1 - y0)
+  }
+  return 1
+}
+
+export interface TramoPresion {
+  neumaticoId: string
+  activoId: string
+  posicion: string
+  /** Fecha de la inspección que cierra el tramo */
+  fecha: string
+  unidad: Unidad
+  uso: number
+  /** Presión con que se estima que rodó: el promedio entre la dejada en la inspección anterior y la encontrada en esta */
+  presionRodada: number
+  ideal: number
+  proporcion: number
+  /** Desgaste de más, en fracción (0,25 = 25 % más rápido) */
+  desgasteExtra: number
+  /** Dinero perdido por el desgaste de más; null si el neumático no tiene costo por km */
+  dinero: number | null
+}
+
+export interface PerdidaActivo {
+  activoId: string
+  unidad: Unidad
+  desgaste: number
+  combustible: number
+  total: number
+  /** Km u horas cubiertos por las inspecciones */
+  uso: number
+  tramos: TramoPresion[]
+  /** Tramos con presión fuera de la ideal cuyo neumático no tiene costo */
+  sinCosto: number
+}
+
+/**
+ * Dinero perdido por presión fuera de la ideal, entre inspecciones:
+ *  * Desgaste: cada neumático rodó el tramo a una presión estimada; según
+ *    la curva TMC gastó (1 ÷ vida − 1) de más, a su costo por km.
+ *  * Combustible: la baja presión promedio del activo en cada inspección
+ *    sube el consumo 0,5 % por cada 10 %, a su costo de combustible por km.
+ * El primer tramo de cada neumático empieza en su montaje o en su
+ * primera inspección; desmontarlo corta el tramo.
+ */
+export function perdidaPorPresion(d: Datos, desde: string | null, hasta: string): Map<string, PerdidaActivo> {
+  const hastaD = hasta.slice(0, 10)
+  const neumaticos = new Map(d.neumaticos.map((n) => [n.id, n]))
+  // Costo por km de cada neumático: el medido, o su costo por mm al ritmo promedio de la flota
+  const proyecciones = new Map(d.neumaticos.map((n) => [n.id, proyeccionNeumatico(n, d, hastaD).proyeccion]))
+  const promedioPorMm = (u: Unidad) => {
+    const v = [...proyecciones.values()].filter((p): p is ProyeccionNeumatico => p != null && p.unidad === u && !p.preliminar).map((p) => p.porMm)
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null
+  }
+  const ritmo = { km: promedioPorMm('km'), horas: promedioPorMm('horas') }
+  const costoPorUso = (id: string, u: Unidad): number | null => {
+    const p = proyecciones.get(id)
+    if (p?.costoPorUnidad != null && p.unidad === u) return p.costoPorUnidad
+    const n = neumaticos.get(id)
+    const porMm = n && (n.renovaciones ?? 0) === 0 ? costoPorMm(n) : null
+    return porMm != null && ritmo[u] ? porMm / ritmo[u]! : null
+  }
+
+  const resultado = new Map<string, PerdidaActivo>()
+  for (const activo of d.activos) {
+    const u = unidadPrincipal(activo.medidor)
+    const combustibleKm = costoOperacion(activo, d, null, hastaD)?.partes.find((p) => p.rubro === 'combustible')?.porUnidad ?? 0
+    type Evento = { fecha: string; orden: number; fin?: string; inicio?: string; lectura: number | null; inspeccionId?: string }
+    const eventos: Evento[] = []
+    for (const m of d.movimientos) {
+      if (m.activo_id !== activo.id) continue
+      if (m.tipo === 'montaje') eventos.push({ fecha: m.fecha.slice(0, 10), orden: 0, inicio: m.neumatico_id, lectura: lectura(m, u) })
+      else if (m.tipo !== 'rotacion') eventos.push({ fecha: m.fecha.slice(0, 10), orden: 2, fin: m.neumatico_id, lectura: null })
+    }
+    for (const i of d.inspecciones) if (i.activo_id === activo.id) eventos.push({ fecha: i.fecha.slice(0, 10), orden: 1, lectura: lectura(i, u), inspeccionId: i.id })
+    eventos.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.orden - b.orden)
+
+    const previo = new Map<string, { lectura: number; dejada: number | null }>()
+    let previaInspeccion: number | null = null
+    const r: PerdidaActivo = { activoId: activo.id, unidad: u, desgaste: 0, combustible: 0, total: 0, uso: 0, tramos: [], sinCosto: 0 }
+    for (const ev of eventos) {
+      if (ev.inicio) {
+        if (ev.lectura != null) previo.set(ev.inicio, { lectura: ev.lectura, dejada: null })
+        continue
+      }
+      if (ev.fin) {
+        previo.delete(ev.fin)
+        continue
+      }
+      if (ev.lectura == null) continue
+      const enPeriodo = (!desde || ev.fecha >= desde) && ev.fecha <= hastaD
+      const bajos: number[] = []
+      for (const x of d.inspeccionNeumaticos) {
+        if (x.inspeccion_id !== ev.inspeccionId || !x.neumatico_id) continue
+        const p = previo.get(x.neumatico_id)
+        const dejada = x.presion_dejada_psi ?? x.presion_psi
+        if (x.presion_psi != null && x.presion_ideal_psi) {
+          const rodada = p?.dejada != null ? (p.dejada + x.presion_psi) / 2 : x.presion_psi
+          const proporcion = rodada / x.presion_ideal_psi
+          bajos.push(Math.max(0, 1 - proporcion))
+          if (p && enPeriodo && ev.lectura > p.lectura) {
+            const uso = ev.lectura - p.lectura
+            const desgasteExtra = 1 / vidaPorPresion(proporcion) - 1
+            const costo = costoPorUso(x.neumatico_id, u)
+            const dinero = costo != null ? costo * uso * desgasteExtra : null
+            if (dinero == null && desgasteExtra > 0) r.sinCosto++
+            r.tramos.push({ neumaticoId: x.neumatico_id, activoId: activo.id, posicion: x.posicion, fecha: ev.fecha, unidad: u, uso, presionRodada: rodada, ideal: x.presion_ideal_psi, proporcion, desgasteExtra, dinero })
+            r.desgaste += dinero ?? 0
+          }
+        }
+        previo.set(x.neumatico_id, { lectura: ev.lectura, dejada })
+      }
+      if (previaInspeccion != null && enPeriodo && ev.lectura > previaInspeccion && bajos.length) {
+        const uso = ev.lectura - previaInspeccion
+        const bajoPromedio = bajos.reduce((a, b) => a + b, 0) / bajos.length
+        r.combustible += combustibleKm * uso * (bajoPromedio / 0.1) * COMBUSTIBLE_POR_10_BAJO
+        r.uso += uso
+      }
+      previaInspeccion = ev.lectura
+    }
+    r.total = r.desgaste + r.combustible
+    if (r.tramos.length || r.total) resultado.set(activo.id, r)
+  }
+  return resultado
+}

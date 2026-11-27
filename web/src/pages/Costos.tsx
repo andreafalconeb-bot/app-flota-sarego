@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useEmpresa } from '../lib/empresa'
 import { CUENTAS, TIPOS_COSTO, etiqueta } from '../lib/catalogos'
 import { dinero, fecha, hoyISO } from '../lib/formato'
-import { costoOperacion, gastoPorCuenta, totalServicio } from '../lib/calculos'
+import { costoOperacion, gastoPorCuenta, perdidaPorPresion, totalServicio } from '../lib/calculos'
 import { dineroUnidad, porUn } from '../components/costoOperacion'
 import { FormCosto } from '../components/formularios'
 import { Metrica, Vacio } from '../components/ui'
@@ -41,7 +41,10 @@ export default function Costos() {
     combustible.forEach((c) => sumar(c.activo_id, c.costo_total ?? 0))
     // Costo de operación por km u hora de cada activo en el mismo periodo
     const operacion = new Map(e.datos.activos.map((a) => [a.id, costoOperacion(a, e.datos, desde, hasta)]))
-    return { operacion, costos: costos.sort((a, b) => b.fecha.localeCompare(a.fecha)), cuentas, totalCombustible, totalMantenimiento, porActivo, fluidos: servicios.reduce((t, s) => t + totalServicio(s), 0) }
+    // Dinero perdido por presión fuera de la ideal (curva TMC)
+    const perdidas = perdidaPorPresion(e.datos, desde, hasta)
+    const perdida = [...perdidas.values()].filter((p) => !activoId || p.activoId === activoId).reduce((t, p) => ({ total: t.total + p.total, desgaste: t.desgaste + p.desgaste, combustible: t.combustible + p.combustible }), { total: 0, desgaste: 0, combustible: 0 })
+    return { perdidas, perdida, operacion, costos: costos.sort((a, b) => b.fecha.localeCompare(a.fecha)), cuentas, totalCombustible, totalMantenimiento, porActivo, fluidos: servicios.reduce((t, s) => t + totalServicio(s), 0) }
   }, [e.datos, desde, hasta, activoId])
 
   if (e.reportesBloqueados) return <div className="aviso error">Los costos vuelven cuando sincronices este equipo con internet.</div>
@@ -74,6 +77,12 @@ export default function Costos() {
         <Metrica valor={dinero(r.fluidos)} etiqueta="De eso, servicios de aceite" />
         <Metrica valor={dinero(r.totalCombustible)} etiqueta="Combustible" />
       </div>
+      {r.perdida.total > 0 && (
+        <div className="aviso alerta chico">
+          <b>{dinero(r.perdida.total)} perdidos por presión fuera de la ideal</b> en el periodo: {dinero(r.perdida.desgaste)} en neumáticos gastados de más y{' '}
+          {dinero(r.perdida.combustible)} en combustible (estimado). Sale de las inspecciones con la curva TMC; el detalle está en la pestaña Neumáticos de cada activo.
+        </div>
+      )}
       {verOperacion && activoId && (
         <div className="aviso chico">
           {opActivo ? (
@@ -117,7 +126,7 @@ export default function Costos() {
               <Vacio>Sin gastos en el periodo.</Vacio>
             ) : (
               <table>
-                {verOperacion && <thead><tr><th>Activo</th><th className="num">Gastado</th><th className="num">Costo de operación</th></tr></thead>}
+                {verOperacion && <thead><tr><th>Activo</th><th className="num">Gastado</th><th className="num">Costo de operación</th><th className="num">Perdido por presión</th></tr></thead>}
                 <tbody>
                   {[...r.porActivo.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15).map(([id, v]) => {
                     const a = e.datos.activos.find((x) => x.id === id)
@@ -128,6 +137,11 @@ export default function Costos() {
                         {verOperacion && (
                           <td className="num" style={{ textAlign: 'right' }}>
                             {r.operacion.get(id) ? `${dineroUnidad(r.operacion.get(id)!.porUnidad)} ${porUn(r.operacion.get(id)!.unidad)}` : <span className="sec chico">sin lecturas</span>}
+                          </td>
+                        )}
+                        {verOperacion && (
+                          <td className="num" style={{ textAlign: 'right' }}>
+                            {r.perdidas.get(id)?.total ? <Link to={`${base}/activos/${id}?p=neumaticos`}>{dinero(r.perdidas.get(id)!.total)}</Link> : <span className="sec chico">—</span>}
                           </td>
                         )}
                       </tr>

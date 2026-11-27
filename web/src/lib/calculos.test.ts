@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, presionIdeal, presionSugerida, kgPorIndice, datosCaucho, proximoCambio, tramosConsumo, estadoLectura, DIAS_LECTURA, costoOperacion, proyeccionNeumatico } from './calculos'
+import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, presionIdeal, presionSugerida, kgPorIndice, datosCaucho, proximoCambio, tramosConsumo, estadoLectura, DIAS_LECTURA, costoOperacion, proyeccionNeumatico, perdidaPorPresion, vidaPorPresion } from './calculos'
 import { aplicar } from './datos'
 import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type InspeccionNeumatico, type Movimiento, type Neumatico, type Servicio } from './tipos'
 
@@ -407,6 +407,29 @@ describe('costo por km y proyección de neumáticos', () => {
     expect(c.total).toBeCloseTo(200 + 100 + 300 + llanta, 6)
     expect(c.porUnidad).toBeCloseTo((600 + llanta) / 24000, 8)
     expect(c.partes.map((p) => p.rubro)).toEqual(['combustible', 'fluidos', 'neumaticos', 'mantenimiento'])
+  })
+
+  it('curva TMC de vida según la presión', () => {
+    expect(vidaPorPresion(1)).toBe(1)
+    expect(vidaPorPresion(0.9)).toBeCloseTo(0.88, 6)
+    expect(vidaPorPresion(0.8)).toBeCloseTo(0.7, 6)
+    expect(vidaPorPresion(0.95)).toBeCloseTo(0.94, 6)
+    expect(vidaPorPresion(1.1)).toBeCloseTo(1 / 1.05, 6)
+    expect(vidaPorPresion(0.3)).toBeCloseTo(0.34, 6)
+  })
+
+  it('dinero perdido por presión: desgaste de más y combustible', () => {
+    const d = base()
+    d.inspeccionNeumaticos[0] = { ...d.inspeccionNeumaticos[0], presion_psi: 80, presion_dejada_psi: 100, presion_ideal_psi: 100 }
+    d.inspeccionNeumaticos[1] = { ...d.inspeccionNeumaticos[1], presion_psi: 90, presion_dejada_psi: 100, presion_ideal_psi: 100 }
+    d.combustible = [carga('2026-09-01', 115000, 400, { costo_total: 240 })] // 240 / 24.000 km = 0,01 por km
+    const r = perdidaPorPresion(d, null, '2026-11-27').get('a1')!
+    const porKm = 450 / 14.5 / 4000
+    expect(r.tramos.map((t) => t.presionRodada)).toEqual([80, 95]) // 1º sin presión anterior; 2º promedio de 100 dejada y 90 encontrada
+    expect(r.tramos[0].dinero).toBeCloseTo(porKm * 10000 * (1 / 0.7 - 1), 6)
+    expect(r.tramos[1].dinero).toBeCloseTo(porKm * 10000 * (1 / 0.94 - 1), 6)
+    expect(r.combustible).toBeCloseTo(0.01 * 10000 * 0.5 * 0.005, 6) // 5 % bajo en 10.000 km
+    expect(r.total).toBeCloseTo(r.desgaste + r.combustible, 6)
   })
 
   it('sin recorrido en el periodo no hay costo por km', () => {
