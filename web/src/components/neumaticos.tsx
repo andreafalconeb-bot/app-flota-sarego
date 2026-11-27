@@ -9,6 +9,7 @@ import type { Activo, InspeccionNeumatico, Neumatico } from '../lib/tipos'
 import { InspeccionGrafica, type FilaInspeccion } from './inspeccionGrafica'
 import { LeyendaEstados, PlantaVehiculo, type Celda } from './planta'
 import { ResumenPresiones } from './presiones'
+import { ProyeccionNeumaticos } from './costoOperacion'
 import { RAZONES_DESECHO, VALVULAS, etiqueta } from '../lib/catalogos'
 import { Campo, ErrorMsg, Modal, Pill, Selector, Vacio, mensajeError, num } from './ui'
 
@@ -114,6 +115,7 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
       <ResumenPresiones activo={activo} montados={montados} puedeEditar={esAdminEmpresa} />
       <PlantaVehiculo configuracion={activo.configuracion} celda={celda} onElegir={setPosicion} />
       <LeyendaEstados />
+      <ProyeccionNeumaticos activo={activo} montados={montados} />
       {posicion && <Posicion key={posicion} activo={activo} posicion={posicion} montado={montados.get(posicion) ?? null} onCerrar={() => setPosicion(null)} />}
       {inspeccionar && <Inspeccion activo={activo} montados={montados} onCerrar={() => setInspeccionar(false)} />}
       <HistorialInspecciones activo={activo} />
