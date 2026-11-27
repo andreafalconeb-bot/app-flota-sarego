@@ -10,6 +10,7 @@ import { FormActivo, FormCarga, FormCompartimiento, FormCosto, FormEstadoInicial
 import { NeumaticosActivo } from '../components/neumaticos'
 import { AnalisisActivo, UltimoAnalisis } from '../components/analisis'
 import { AvisoLectura, FormInactividad, Semana } from '../components/inactividad'
+import { TarjetaCostoOperacion } from '../components/costoOperacion'
 import { Campo, ErrorMsg, Metrica, Pill, Selector, SoloPago, Vacio, mensajeError } from '../components/ui'
 
 const PESTANAS = { fluidos: 'Fluidos', analisis: 'Análisis de aceite', combustible: 'Combustible', neumaticos: 'Neumáticos', costos: 'Costos', lecturas: 'Lecturas', datos: 'Datos' }
@@ -381,8 +382,9 @@ function CostosActivo({ activo }: { activo: Activo }) {
   if (e.reportesBloqueados) return <div className="aviso error">Los costos vuelven cuando sincronices este equipo con internet.</div>
   return (
     <div className="pila" style={{ gap: 14 }}>
+      <TarjetaCostoOperacion activo={activo} />
       <div className="fila-entre">
-        <span className="sec chico">Facturas y gastos de este activo por cuenta. Los servicios de aceite se suman solos en el reporte de Costos.</span>
+        <span className="sec chico">Facturas y gastos de este activo por cuenta. El combustible, los servicios de aceite y el desgaste de los neumáticos se suman solos en el costo de operación.</span>
         {e.puedeEscribir && <button className="primario" onClick={() => setNuevo(true)}>Registrar gasto</button>}
       </div>
       {costos.length === 0 ? (

@@ -9,7 +9,8 @@ import { FormNeumatico } from '../components/formularios'
 import { Pill, Vacio } from '../components/ui'
 import { TarjetaFacturas } from '../components/facturas'
 import { condiciones } from '../components/neumaticos'
-import { claseNeumatico, resumenInventario, type FilaResumen } from '../lib/calculos'
+import { claseNeumatico, proyeccionNeumatico, resumenInventario, type FilaResumen } from '../lib/calculos'
+import { dineroUnidad, textoProyeccion, un } from '../components/costoOperacion'
 import type { Neumatico } from '../lib/tipos'
 
 export default function Neumaticos() {
@@ -22,6 +23,8 @@ export default function Neumaticos() {
   // Nuevo o usado, con la última profundidad conocida (compra, desmontaje o inspección)
   const conds = useMemo(() => condiciones(e.datos), [e.datos])
   const clase = (id: string) => claseNeumatico(e.datos.neumaticos.find((n) => n.id === id)!, conds.get(id)!)
+  // Proyección de duración hasta 1,5 mm (regla de tres km / mm)
+  const proyecciones = useMemo(() => new Map(e.datos.neumaticos.map((n) => [n.id, proyeccionNeumatico(n, e.datos).proyeccion])), [e.datos])
   const resumen = useMemo(() => resumenInventario(e.datos.neumaticos, clase), [e.datos, conds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const lista = e.datos.neumaticos
@@ -58,7 +61,7 @@ export default function Neumaticos() {
         <div className="tarjeta tabla-wrap" style={{ padding: 0 }}>
           <table>
             <thead>
-              <tr><th>Serial</th><th>Marca a fuego / DOT</th><th>Neumático</th><th>Estado</th><th>Última profundidad</th>{!e.reportesBloqueados && <th>Costo</th>}</tr>
+              <tr><th>Serial</th><th>Marca a fuego / DOT</th><th>Neumático</th><th>Estado</th><th>Última profundidad</th><th>Proyección a 1,5 mm</th>{!e.reportesBloqueados && <th>Costo</th>}</tr>
             </thead>
             <tbody>
               {lista.map((n) => {
@@ -101,7 +104,26 @@ export default function Neumaticos() {
                         <span className="sec chico">—</span>
                       )}
                     </td>
-                    {!e.reportesBloqueados && <td className="num">{dinero(n.costo)}</td>}
+                    <td>
+                      {(() => {
+                        const p = n.estado === 'desecho' ? null : proyecciones.get(n.id)
+                        if (!p) return <span className="sec chico">—</span>
+                        return (
+                          <>
+                            {p.llego ? <Pill tono="critico">{textoProyeccion(p)}</Pill> : textoProyeccion(p)}
+                            <div className="sec chico">
+                              {Math.round(p.porMm).toLocaleString('es-VE')} {un(p.unidad)}/mm{p.vidaTotal != null && ` · vida ${Math.round(p.vidaTotal).toLocaleString('es-VE')} ${un(p.unidad)}`}{p.preliminar && ' · preliminar'}
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </td>
+                    {!e.reportesBloqueados && (
+                      <td className="num">
+                        {dinero(n.costo)}
+                        {proyecciones.get(n.id)?.costoPorUnidad != null && <div className="sec chico">{dineroUnidad(proyecciones.get(n.id)!.costoPorUnidad)}/{un(proyecciones.get(n.id)!.unidad)}</div>}
+                      </td>
+                    )}
                   </tr>
                 )
               })}

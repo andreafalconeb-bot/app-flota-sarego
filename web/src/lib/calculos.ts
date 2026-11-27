@@ -1,6 +1,6 @@
 // Cálculos de Flota SAREGO. Funciones puras, con pruebas en
 // calculos.test.ts.
-import type { Activo, Carga, Compartimiento, Costo, Medidor, Plan, Servicio } from './tipos'
+import type { Activo, Carga, Compartimiento, Costo, Datos, Medidor, Neumatico, Plan, Servicio } from './tipos'
 
 const DIA = 86_400_000
 
@@ -643,4 +643,380 @@ export function gastoPorCuenta(costos: Costo[], servicios: Servicio[], compartim
     sumar(cuenta, totalServicio(s))
   }
   return mapa
+}
+
+// ------------------------------------------------------------
+// Costo de operación por km o por hora de cada activo
+// ------------------------------------------------------------
+/** Una lectura de odómetro u horómetro con su fecha (día). */
+export interface PuntoUso {
+  fecha: string
+  valor: number
+}
+
+/**
+ * Todas las lecturas conocidas de un activo en su unidad: las lecturas
+ * semanales, cargas de combustible, servicios, gastos, inspecciones y
+ * movimientos de neumáticos, y la lectura actual. Ordenadas por fecha.
+ */
+export function lecturasActivo(activo: Activo, d: Pick<Datos, 'lecturas' | 'combustible' | 'servicios' | 'costos' | 'inspecciones' | 'movimientos'>, u: Unidad = unidadPrincipal(activo.medidor)): PuntoUso[] {
+  const puntos: PuntoUso[] = []
+  const sumar = (fecha: string | null | undefined, x: { km: number | null; horas: number | null }) => {
+    const v = lectura(x, u)
+    if (fecha && v != null && !isNaN(v)) puntos.push({ fecha: fecha.slice(0, 10), valor: v })
+  }
+  const deEste = <T extends { activo_id: string | null }>(xs: T[]) => xs.filter((x) => x.activo_id === activo.id)
+  deEste(d.lecturas).forEach((x) => sumar(x.fecha, x))
+  deEste(d.combustible).forEach((x) => sumar(x.fecha, x))
+  deEste(d.servicios).forEach((x) => sumar(x.fecha, x))
+  deEste(d.costos).forEach((x) => sumar(x.fecha, x))
+  deEste(d.inspecciones).forEach((x) => sumar(x.fecha, x))
+  deEste(d.movimientos).forEach((x) => sumar(x.fecha, x))
+  sumar(activo.lectura_at, { km: activo.km_actual, horas: activo.horas_actual })
+  return puntos.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.valor - b.valor)
+}
+
+/**
+ * Lo que trabajó el activo entre dos fechas (inclusive): la mayor
+ * lectura hasta `hasta` menos la última lectura antes de `desde` (o, si
+ * no hay ninguna antes, la primera dentro del periodo).
+ */
+export function usoEnPeriodo(puntos: PuntoUso[], desde: string | null, hasta: string): { uso: number; desde: string; hasta: string } | null {
+  const hastaD = hasta.slice(0, 10)
+  const antes = desde ? puntos.filter((p) => p.fecha < desde) : []
+  const dentro = puntos.filter((p) => (!desde || p.fecha >= desde) && p.fecha <= hastaD)
+  if (!dentro.length) return null
+  const inicio = antes.length ? antes.reduce((m, p) => (p.valor > m.valor ? p : m)) : dentro.reduce((m, p) => (p.valor < m.valor ? p : m))
+  const fin = dentro.reduce((m, p) => (p.valor > m.valor ? p : m))
+  const uso = fin.valor - inicio.valor
+  return uso > 0 ? { uso, desde: inicio.fecha, hasta: fin.fecha } : null
+}
+
+/**
+ * Cuánto trabaja el activo por día: lo recorrido en los últimos 90 días
+ * con lectura (o en todo su historial si es más corto). Null si hay
+ * menos de 7 días entre lecturas.
+ */
+export function usoPorDia(puntos: PuntoUso[]): number | null {
+  if (puntos.length < 2) return null
+  const ultimo = puntos.reduce((m, p) => (p.fecha > m.fecha || (p.fecha === m.fecha && p.valor > m.valor) ? p : m))
+  const limite = new Date(new Date(ultimo.fecha + 'T12:00:00').getTime() - 90 * DIA).toISOString().slice(0, 10)
+  const recientes = puntos.filter((p) => p.fecha >= limite && p.fecha < ultimo.fecha)
+  const base = (recientes.length ? recientes : puntos.filter((p) => p.fecha < ultimo.fecha))[0]
+  if (!base) return null
+  const dias = (new Date(ultimo.fecha).getTime() - new Date(base.fecha).getTime()) / DIA
+  if (dias < 7 || ultimo.valor <= base.valor) return null
+  return (ultimo.valor - base.valor) / dias
+}
+
+export type Rubro = 'combustible' | 'fluidos' | 'neumaticos' | 'mantenimiento'
+
+export interface ParteCosto {
+  rubro: Rubro
+  /** Cuenta de costo (solo en mantenimiento) */
+  cuenta?: string
+  monto: number
+  porUnidad: number
+}
+
+export interface CostoOperacion {
+  unidad: Unidad
+  /** Km u horas trabajados en el periodo */
+  uso: number
+  desde: string
+  hasta: string
+  total: number
+  porUnidad: number
+  partes: ParteCosto[]
+  /** Cargas de combustible sin costo anotado (no suman) */
+  cargasSinCosto: number
+  /** Neumáticos con desgaste medido pero sin costo o sin profundidad de nuevo (no suman) */
+  neumaticosSinCosto: number
+  /** Gastos cargados en la cuenta de neumáticos (pueden repetir la compra) */
+  gastoCuentaNeumaticos: number
+}
+
+/**
+ * Costo de operación de un activo por km (o por hora, si trabaja con
+ * horómetro): todo lo que costó en el periodo dividido entre lo que
+ * trabajó en ese mismo periodo.
+ *  * Combustible: las cargas con costo.
+ *  * Fluidos: los servicios de aceite, filtros y engrase.
+ *  * Neumáticos: el desgaste medido en este activo, a su costo por mm
+ *    útil (costo ÷ (profundidad de nuevo − 1,5 mm)).
+ *  * Mantenimiento: las facturas y gastos, por cuenta.
+ * Null si en el periodo no hay recorrido para dividir.
+ */
+export function costoOperacion(activo: Activo, d: Datos, desde: string | null, hasta: string): CostoOperacion | null {
+  const unidad = unidadPrincipal(activo.medidor)
+  const periodo = usoEnPeriodo(lecturasActivo(activo, d, unidad), desde, hasta)
+  if (!periodo) return null
+  const hastaD = hasta.slice(0, 10)
+  const enPeriodo = (f: string) => (!desde || f.slice(0, 10) >= desde) && f.slice(0, 10) <= hastaD
+  const suyos = <T extends { activo_id: string | null; fecha: string }>(xs: T[]) => xs.filter((x) => x.activo_id === activo.id && enPeriodo(x.fecha))
+
+  const cargas = suyos(d.combustible)
+  const combustible = cargas.reduce((t, c) => t + (c.costo_total ?? 0), 0)
+  const cargasSinCosto = cargas.filter((c) => c.costo_total == null).length
+  const fluidos = suyos(d.servicios).reduce((t, s) => t + totalServicio(s), 0)
+  const porCuenta = new Map<string, number>()
+  for (const c of suyos(d.costos)) porCuenta.set(c.cuenta, (porCuenta.get(c.cuenta) ?? 0) + c.monto)
+
+  let neumaticos = 0
+  let neumaticosSinCosto = 0
+  for (const n of d.neumaticos) {
+    const h = historialBanda(n, d)
+    const mm = desgasteEnActivo(h, activo.id, unidad, desde, hastaD)
+    if (mm <= 0) continue
+    const porMm = costoPorMm(n)
+    if (porMm == null) neumaticosSinCosto++
+    else neumaticos += mm * porMm
+  }
+
+  const div = (v: number) => v / periodo.uso
+  const partes: ParteCosto[] = []
+  if (combustible) partes.push({ rubro: 'combustible', monto: combustible, porUnidad: div(combustible) })
+  if (fluidos) partes.push({ rubro: 'fluidos', monto: fluidos, porUnidad: div(fluidos) })
+  if (neumaticos) partes.push({ rubro: 'neumaticos', monto: neumaticos, porUnidad: div(neumaticos) })
+  for (const [cuenta, monto] of [...porCuenta.entries()].sort((a, b) => b[1] - a[1])) {
+    if (monto) partes.push({ rubro: 'mantenimiento', cuenta, monto, porUnidad: div(monto) })
+  }
+  const total = partes.reduce((t, p) => t + p.monto, 0)
+  return {
+    unidad,
+    uso: periodo.uso,
+    desde: periodo.desde,
+    hasta: periodo.hasta,
+    total,
+    porUnidad: div(total),
+    partes,
+    cargasSinCosto,
+    neumaticosSinCosto,
+    gastoCuentaNeumaticos: porCuenta.get('neumaticos_rines') ?? 0,
+  }
+}
+
+// ------------------------------------------------------------
+// Proyección de duración de cada neumático (regla de tres km / mm)
+// ------------------------------------------------------------
+/**
+ * Remanente estándar para sustituir el neumático o mandarlo a renovar si
+ * la carcasa está buena (Andrea, 27/nov/2026).
+ */
+export const REMANENTE_MM = 1.5
+
+/**
+ * Desgaste mínimo medido para proyectar: el medidor tiene un error de
+ * ±0,5 mm, que con 1 mm gastado mueve la proyección ±50 % y con 2 mm ±25 %.
+ */
+export const MM_MINIMO_PROYECCION = 2
+/** Con menos de este desgaste medido la proyección es preliminar (error de ±12 % o más). */
+export const MM_PROYECCION_FIRME = 4
+
+/** Una medición de profundidad del neumático, con la lectura del activo donde estaba. */
+export interface MedidaBanda {
+  fecha: string
+  mm: number
+  activoId: string | null
+  km: number | null
+  horas: number | null
+  /** Empieza un montaje (no se cuenta el recorrido desde la medición anterior) */
+  inicio: boolean
+  /** Termina un montaje (desmontaje, desecho, reparación, renovación) */
+  fin: boolean
+  /** Banda renovada: empieza una banda nueva */
+  renovacion: boolean
+}
+
+/**
+ * Mediciones de profundidad del neumático en orden: las de los
+ * movimientos (montaje, rotación, desmontaje, renovación) y las de las
+ * inspecciones.
+ */
+export function historialBanda(n: { id: string }, d: Pick<Datos, 'movimientos' | 'inspecciones' | 'inspeccionNeumaticos'>): MedidaBanda[] {
+  const lista: (MedidaBanda & { orden: number })[] = []
+  for (const m of d.movimientos) {
+    if (m.neumatico_id !== n.id || m.profundidad_mm == null) continue
+    const renovacion = /banda renovada/i.test(m.motivo ?? '')
+    const orden = m.tipo === 'montaje' ? 0 : m.tipo === 'rotacion' ? 1 : 3
+    lista.push({ fecha: m.fecha.slice(0, 10), mm: m.profundidad_mm, activoId: renovacion ? null : m.activo_id, km: m.km, horas: m.horas, inicio: m.tipo === 'montaje', fin: m.tipo !== 'montaje' && m.tipo !== 'rotacion', renovacion, orden })
+  }
+  const insp = new Map(d.inspecciones.map((i) => [i.id, i]))
+  for (const x of d.inspeccionNeumaticos) {
+    const i = insp.get(x.inspeccion_id)
+    if (x.neumatico_id !== n.id || x.profundidad_min_mm == null || !i) continue
+    lista.push({ fecha: i.fecha.slice(0, 10), mm: x.profundidad_min_mm, activoId: i.activo_id, km: i.km, horas: i.horas, inicio: false, fin: false, renovacion: false, orden: 2 })
+  }
+  // Mismo día: montaje, rotación, inspección y desmontaje, en ese orden
+  return lista
+    .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.orden - b.orden || (a.km ?? a.horas ?? 0) - (b.km ?? b.horas ?? 0))
+    .map(({ orden: _, ...m }) => m)
+}
+
+/** Un tramo entre dos mediciones del mismo montaje. */
+export interface TramoBanda {
+  activoId: string
+  hasta: string
+  uso: number
+  mm: number
+  /** Tramo de la banda original (antes de cualquier renovación) */
+  original: boolean
+}
+
+/**
+ * Tramos entre mediciones seguidas dentro del mismo montaje: lo que
+ * recorrió (km u h, según `u`) y lo que se gastó (mm; puede salir
+ * negativo por el error de medir, y así se compensa).
+ */
+export function tramosBanda(h: MedidaBanda[], u: Unidad | ((activoId: string) => Unidad)): TramoBanda[] {
+  const tramos: TramoBanda[] = []
+  let original = true
+  for (let i = 1; i < h.length; i++) {
+    const a = h[i - 1]
+    const b = h[i]
+    if (b.renovacion) original = false
+    if (a.fin || b.inicio || b.renovacion || !a.activoId || a.activoId !== b.activoId) continue
+    const un = typeof u === 'function' ? u(a.activoId) : u
+    const la = lectura(a, un)
+    const lb = lectura(b, un)
+    if (la == null || lb == null || lb < la) continue
+    tramos.push({ activoId: a.activoId, hasta: b.fecha, uso: lb - la, mm: a.mm - b.mm, original })
+  }
+  return tramos
+}
+
+/** Desgaste (mm) medido en un activo entre dos fechas, solo de la banda original. */
+export function desgasteEnActivo(h: MedidaBanda[], activoId: string, u: Unidad, desde: string | null, hasta: string): number {
+  const mm = tramosBanda(h, u)
+    .filter((t) => t.original && t.activoId === activoId && (!desde || t.hasta >= desde) && t.hasta <= hasta)
+    .reduce((s, t) => s + t.mm, 0)
+  return Math.max(0, mm)
+}
+
+/** Costo de cada mm útil de la banda original: costo ÷ (profundidad de nuevo − 1,5). */
+export function costoPorMm(n: Pick<Neumatico, 'costo' | 'profundidad_inicial_mm'>): number | null {
+  if (n.costo == null || n.costo <= 0 || n.profundidad_inicial_mm == null) return null
+  const util = n.profundidad_inicial_mm - REMANENTE_MM
+  return util > 0 ? n.costo / util : null
+}
+
+export interface ProyeccionNeumatico {
+  unidad: Unidad
+  /** Km u horas recorridos entre mediciones */
+  usoMedido: number
+  mmGastados: number
+  /** Km (u horas) por cada mm de banda: la base de la regla de tres */
+  porMm: number
+  /** Profundidad de la banda nueva (la de compra o la de la última renovación) */
+  mmNuevo: number | null
+  /** Duración total proyectada de la banda, de nueva a 1,5 mm */
+  vidaTotal: number | null
+  mmUltima: number
+  fechaUltima: string
+  /** Lo que le queda desde la última medición hasta 1,5 mm */
+  restante: number
+  /** Lectura del activo donde llega a 1,5 mm (si está montado) */
+  lecturaRetiro: number | null
+  /** Lo que le queda desde la lectura actual del activo */
+  restanteHoy: number | null
+  /** Profundidad estimada hoy (la medida menos lo recorrido después) */
+  mmHoy: number | null
+  /** Fecha estimada en que llega a 1,5 mm, según lo que trabaja el activo */
+  fechaRetiro: string | null
+  /** Costo por km (u hora) de la banda original */
+  costoPorUnidad: number | null
+  /** Menos de 4 mm medidos: puede moverse bastante con las próximas mediciones */
+  preliminar: boolean
+  /** La tasa sale de la banda anterior porque la renovada aún no tiene desgaste medido */
+  tasaBandaAnterior: boolean
+  /** Ya está en 1,5 mm o menos */
+  llego: boolean
+}
+
+/**
+ * Proyección de duración por regla de tres: con lo que recorrió y lo
+ * que gastó (km por mm), cuánto le falta hasta el remanente de 1,5 mm,
+ * cuando toca sustituirlo o mandarlo a renovar si la carcasa está buena.
+ * Devuelve el motivo si todavía no se puede proyectar.
+ */
+export function proyeccionNeumatico(
+  n: Pick<Neumatico, 'id' | 'costo' | 'profundidad_inicial_mm' | 'renovaciones' | 'estado' | 'activo_id'>,
+  d: Pick<Datos, 'movimientos' | 'inspecciones' | 'inspeccionNeumaticos' | 'activos' | 'lecturas' | 'combustible' | 'servicios' | 'costos'>,
+  hoy = new Date().toISOString().slice(0, 10),
+): { proyeccion: ProyeccionNeumatico | null; motivo: string | null } {
+  const h = historialBanda(n, d)
+  const ultima = h[h.length - 1]
+  if (!ultima) return { proyeccion: null, motivo: 'Sin profundidades medidas.' }
+  const activos = new Map(d.activos.map((a) => [a.id, a]))
+  const unidadDe = (id: string) => unidadPrincipal(activos.get(id)?.medidor ?? 'km')
+  const montadoEn = n.estado === 'montado' && n.activo_id ? activos.get(n.activo_id) ?? null : null
+  const tramos = tramosBanda(h, unidadDe)
+  const unidad: Unidad = montadoEn ? unidadPrincipal(montadoEn.medidor) : tramos.length ? unidadDe(tramos[tramos.length - 1].activoId) : 'km'
+  const deUnidad = tramos.filter((t) => unidadDe(t.activoId) === unidad)
+  const renovado = (n.renovaciones ?? 0) > 0
+  const actuales = renovado ? deUnidad.filter((t) => !t.original) : deUnidad
+  const suma = (ts: TramoBanda[]) => ts.reduce((s, t) => ({ uso: s.uso + t.uso, mm: s.mm + t.mm }), { uso: 0, mm: 0 })
+  let base = suma(actuales)
+  let tasaBandaAnterior = false
+  if (renovado && base.mm < MM_MINIMO_PROYECCION) {
+    const anterior = suma(deUnidad)
+    if (anterior.mm >= MM_MINIMO_PROYECCION) {
+      base = anterior
+      tasaBandaAnterior = true
+    }
+  }
+  if (base.uso <= 0 || base.mm < MM_MINIMO_PROYECCION) {
+    return { proyeccion: null, motivo: `Hace falta medir al menos ${MM_MINIMO_PROYECCION} mm de desgaste en el activo (montaje e inspección con ${unidad === 'km' ? 'odómetro' : 'horómetro'}) para proyectar.` }
+  }
+  const porMm = base.uso / base.mm
+  // Banda nueva: la última renovación o la de compra
+  const ultimaRenovacion = [...h].reverse().find((m) => m.renovacion)
+  const mmNuevo = renovado ? ultimaRenovacion?.mm ?? null : n.profundidad_inicial_mm
+  const vidaTotal = mmNuevo != null && mmNuevo > REMANENTE_MM ? (mmNuevo - REMANENTE_MM) * porMm : null
+  const restante = Math.max(0, (ultima.mm - REMANENTE_MM) * porMm)
+
+  let lecturaRetiro: number | null = null
+  let restanteHoy: number | null = null
+  let mmHoy: number | null = null
+  let fechaRetiro: string | null = null
+  if (montadoEn && ultima.activoId === montadoEn.id) {
+    const enUltima = lectura(ultima, unidad)
+    const actual = lecturaActual(montadoEn, unidad)
+    if (enUltima != null) {
+      lecturaRetiro = enUltima + restante
+      if (actual != null) {
+        restanteHoy = Math.max(0, lecturaRetiro - Math.max(actual, enUltima))
+        mmHoy = Math.max(0, ultima.mm - (Math.max(actual, enUltima) - enUltima) / porMm)
+      }
+      const diario = usoPorDia(lecturasActivo(montadoEn, d, unidad))
+      if (diario && restanteHoy != null) {
+        const f = new Date(hoy + 'T12:00:00')
+        f.setDate(f.getDate() + Math.round(restanteHoy / diario))
+        fechaRetiro = f.toISOString().slice(0, 10)
+      }
+    }
+  }
+  const costo = !renovado ? costoPorMm(n) : null
+  return {
+    proyeccion: {
+      unidad,
+      usoMedido: base.uso,
+      mmGastados: base.mm,
+      porMm,
+      mmNuevo,
+      vidaTotal,
+      mmUltima: ultima.mm,
+      fechaUltima: ultima.fecha,
+      restante,
+      lecturaRetiro,
+      restanteHoy,
+      mmHoy,
+      fechaRetiro,
+      costoPorUnidad: costo != null ? costo / porMm : null,
+      preliminar: base.mm < MM_PROYECCION_FIRME,
+      tasaBandaAnterior,
+      llego: (mmHoy ?? ultima.mm) <= REMANENTE_MM,
+    },
+    motivo: null,
+  }
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, presionIdeal, presionSugerida, kgPorIndice, datosCaucho, proximoCambio, tramosConsumo, estadoLectura, DIAS_LECTURA } from './calculos'
+import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, presionIdeal, presionSugerida, kgPorIndice, datosCaucho, proximoCambio, tramosConsumo, estadoLectura, DIAS_LECTURA, costoOperacion, proyeccionNeumatico } from './calculos'
 import { aplicar } from './datos'
-import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type Servicio } from './tipos'
+import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type InspeccionNeumatico, type Movimiento, type Neumatico, type Servicio } from './tipos'
 
 const DIA = 86_400_000
 const activo = (x: Partial<Activo> = {}): Activo => ({
@@ -321,5 +321,96 @@ describe('lectura semanal', () => {
     const r = proximoCambio(comp({ intervalo_km: 10000, intervalo_dias: 180 }), a, [s], hoy)
     expect(r.restante).toBe(5000)
     expect(r.estado).toBe('vencido')
+  })
+})
+
+describe('costo por km y proyección de neumáticos', () => {
+  const neu = (x: Partial<Neumatico> = {}): Neumatico => ({
+    id: 'n1', empresa_id: 'e', marca_fuego: null, marca: null, modelo: null, medida: null, dot: null,
+    profundidad_inicial_mm: 16, presion_ideal_psi: null, costo: 450, fecha_compra: null, estado: 'montado',
+    activo_id: 'a1', posicion: '1I', montado_at: '2026-06-01', km_montaje: 100000, horas_montaje: null, notas: null, ...x,
+  })
+  const mov = (x: Partial<Movimiento>): Movimiento => ({
+    id: crypto.randomUUID(), empresa_id: 'e', neumatico_id: 'n1', tipo: 'montaje', activo_id: 'a1', posicion: '1I',
+    posicion_anterior: null, fecha: '2026-06-01', km: 100000, horas: null, profundidad_mm: 16, motivo: null, ...x,
+  })
+  const base = () => {
+    const d = datosVacios()
+    d.activos = [activo({ km_actual: 124000, lectura_at: '2026-11-01T10:00:00Z' })]
+    d.neumaticos = [neu()]
+    d.movimientos = [mov({})]
+    d.inspecciones = [
+      { id: 'i1', empresa_id: 'e', activo_id: 'a1', fecha: '2026-08-01T10:00:00Z', km: 110000, horas: null, notas: null },
+      { id: 'i2', empresa_id: 'e', activo_id: 'a1', fecha: '2026-10-01T10:00:00Z', km: 120000, horas: null, notas: null },
+    ]
+    const med = (id: string, inspeccion_id: string, mm: number): InspeccionNeumatico => ({
+      id, empresa_id: 'e', inspeccion_id, neumatico_id: 'n1', posicion: '1I', presion_psi: null, presion_ideal_psi: null,
+      profundidades_mm: [mm], profundidad_min_mm: mm, valvula: 'ok', observacion: null,
+    })
+    d.inspeccionNeumaticos = [med('m1', 'i1', 13), med('m2', 'i2', 11)]
+    return d
+  }
+
+  it('proyecta por regla de tres hasta 1,5 mm', () => {
+    const { proyeccion: p } = proyeccionNeumatico(neu(), base(), '2026-11-27')
+    expect(p).not.toBeNull()
+    expect(p!.porMm).toBe(4000) // 20.000 km / 5 mm
+    expect(p!.vidaTotal).toBe(58000) // (16 − 1,5) × 4.000
+    expect(p!.restante).toBe(38000) // (11 − 1,5) × 4.000
+    expect(p!.lecturaRetiro).toBe(158000)
+    expect(p!.restanteHoy).toBe(34000)
+    expect(p!.mmHoy).toBe(10)
+    expect(p!.costoPorUnidad).toBeCloseTo(450 / 14.5 / 4000, 8)
+    expect(p!.preliminar).toBe(false) // 5 mm medidos
+    expect(p!.fechaRetiro).toBe('2027-08-18') // 34.000 km a 4.000 km en 31 días
+  })
+
+  it('no cuenta lo que pasó entre un desmontaje y el montaje siguiente', () => {
+    const d = base()
+    d.movimientos.push(
+      mov({ tipo: 'desmontaje', fecha: '2026-10-02', km: 120000, profundidad_mm: 11 }),
+      mov({ tipo: 'montaje', fecha: '2026-10-20', km: 130000, profundidad_mm: 11 }),
+    )
+    expect(proyeccionNeumatico(neu(), d).proyeccion!.porMm).toBe(4000)
+  })
+
+  it('pide desgaste medido antes de proyectar', () => {
+    const d = base()
+    d.inspeccionNeumaticos = d.inspeccionNeumaticos.slice(0, 0)
+    const r = proyeccionNeumatico(neu(), d)
+    expect(r.proyeccion).toBeNull()
+    expect(r.motivo).toMatch(/al menos 2 mm/)
+  })
+
+  it('una banda renovada sin desgaste propio usa la tasa de la anterior y no tiene costo por km', () => {
+    const d = base()
+    d.movimientos.push(
+      mov({ tipo: 'desmontaje', fecha: '2026-10-02', km: 120000, profundidad_mm: 11 }),
+      mov({ tipo: 'reparacion', activo_id: null, fecha: '2026-10-10', km: null, profundidad_mm: 14, motivo: 'Banda renovada (1ª vez)' }),
+    )
+    const n = neu({ renovaciones: 1, estado: 'inventario', activo_id: null })
+    const p = proyeccionNeumatico(n, d).proyeccion!
+    expect(p.tasaBandaAnterior).toBe(true)
+    expect(p.mmNuevo).toBe(14)
+    expect(p.vidaTotal).toBe(50000)
+    expect(p.costoPorUnidad).toBeNull()
+  })
+
+  it('costo por km del activo con todos sus rubros', () => {
+    const d = base()
+    d.combustible = [carga('2026-09-01', 115000, 400, { costo_total: 200 })]
+    d.servicios = [serv({ fecha: '2026-09-15', km: 117000, costo_lubricante: 100 })]
+    d.costos = [{ id: 'k1', empresa_id: 'e', activo_id: 'a1', fecha: '2026-10-10', cuenta: 'frenos', tipo: 'repuesto', descripcion: 'Pastillas', proveedor: null, factura: null, monto: 300, km: null, horas: null }]
+    const c = costoOperacion(d.activos[0], d, '2026-07-01', '2026-11-27')!
+    expect(c.uso).toBe(24000) // 124.000 − 100.000 (última lectura antes del periodo)
+    const llanta = (450 / 14.5) * 5
+    expect(c.total).toBeCloseTo(200 + 100 + 300 + llanta, 6)
+    expect(c.porUnidad).toBeCloseTo((600 + llanta) / 24000, 8)
+    expect(c.partes.map((p) => p.rubro)).toEqual(['combustible', 'fluidos', 'neumaticos', 'mantenimiento'])
+  })
+
+  it('sin recorrido en el periodo no hay costo por km', () => {
+    const d = base()
+    expect(costoOperacion(d.activos[0], d, '2026-11-15', '2026-11-27')).toBeNull()
   })
 })
