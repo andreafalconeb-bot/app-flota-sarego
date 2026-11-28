@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, presionIdeal, presionSugerida, kgPorIndice, datosCaucho, proximoCambio, tramosConsumo, estadoLectura, DIAS_LECTURA, costoOperacion, proyeccionNeumatico, perdidaPorPresion, vidaPorPresion, evaluarMedida, parejaDual } from './calculos'
+import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, presionIdeal, presionSugerida, kgPorIndice, datosCaucho, proximoCambio, tramosConsumo, estadoLectura, DIAS_LECTURA, costoOperacion, proyeccionNeumatico, perdidaPorPresion, vidaPorPresion, evaluarMedida, parejaDual, profundidadIlogica } from './calculos'
 import { aplicar } from './datos'
 import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type InspeccionNeumatico, type Movimiento, type Neumatico, type Servicio } from './tipos'
 
@@ -448,6 +448,17 @@ describe('costo por km y proyección de neumáticos', () => {
     expect(ev([11, 9, 10]).alertas.map((a) => a.tipo)).toContain('irregular')
     expect(ev([10, 10, 10], 124000, 6).alertas.map((a) => a.tipo)).toEqual(['duales'])
     expect(ev([1.5]).alertas.map((a) => a.tipo)).toContain('remanente')
+  })
+
+  it('alarma de profundidad ilógica hasta que una medida nueva la corrija', () => {
+    const d = base()
+    expect(profundidadIlogica(d.neumaticos[0], d)).toBeNull()
+    d.inspecciones.push({ id: 'i3', empresa_id: 'e', activo_id: 'a1', fecha: '2026-11-10T10:00:00Z', km: 122000, horas: null, notas: null })
+    d.inspeccionNeumaticos.push({ ...d.inspeccionNeumaticos[1], id: 'm3', inspeccion_id: 'i3', profundidad_min_mm: 12 })
+    expect(profundidadIlogica(d.neumaticos[0], d)).toMatchObject({ mm: 12, anterior: 11 })
+    d.inspecciones.push({ id: 'i4', empresa_id: 'e', activo_id: 'a1', fecha: '2026-11-20T10:00:00Z', km: 123000, horas: null, notas: null })
+    d.inspeccionNeumaticos.push({ ...d.inspeccionNeumaticos[1], id: 'm4', inspeccion_id: 'i4', profundidad_min_mm: 10.5 })
+    expect(profundidadIlogica(d.neumaticos[0], d)).toBeNull()
   })
 
   it('pareja dual', () => {

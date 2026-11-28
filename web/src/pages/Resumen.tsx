@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useEmpresa } from '../lib/empresa'
 import { COMPONENTES, etiqueta } from '../lib/catalogos'
 import { dinero, fecha, fechaHora, textoRestante } from '../lib/formato'
-import { DIAS_LECTURA, estadoLectura, estadoPresion, estadoProfundidad, gastoPorCuenta, perdidaPorPresion, presionActual, proximoCambio, type ProximoCambio } from '../lib/calculos'
+import { DIAS_LECTURA, estadoLectura, estadoPresion, estadoProfundidad, gastoPorCuenta, perdidaPorPresion, presionActual, profundidadIlogica, proximoCambio, type ProximoCambio } from '../lib/calculos'
 import { nombrePosicion } from '../lib/ejes'
 import { ultimasMediciones } from '../components/neumaticos'
 import { Metrica, Pill, SoloPago, Vacio } from '../components/ui'
@@ -53,6 +53,19 @@ export default function Resumen() {
         if (ed === 'alerta' || ed === 'critico') partes.push(`${mm} mm`)
         lista.push({ activo: a, pos, texto: partes.join(' · '), critico: ep === 'critico' || ed === 'critico' })
       }
+    }
+    // Alarma: profundidad mayor que la anterior (ilógica)
+    for (const n of datos.neumaticos) {
+      if (n.estado !== 'montado' || !n.activo_id) continue
+      const x = profundidadIlogica(n, datos)
+      const a = activos.find((y) => y.id === n.activo_id)
+      if (!x || !a) continue
+      const previo = lista.find((l) => l.activo.id === a.id && l.pos === n.posicion)
+      const texto = `🚨 Profundidad ilógica: ${x.mm} mm > ${x.anterior} mm anterior`
+      if (previo) {
+        previo.texto = `${texto} · ${previo.texto}`
+        previo.critico = true
+      } else lista.push({ activo: a, pos: n.posicion!, texto, critico: true })
     }
     return lista.sort((x, y) => Number(y.critico) - Number(x.critico))
     // eslint-disable-next-line react-hooks/exhaustive-deps

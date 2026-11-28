@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { useEmpresa } from '../lib/empresa'
 import { hoyISO, fecha, nombreNeumatico, serialNeumatico } from '../lib/formato'
 import { PLANTILLAS, ejeDe, nombrePosicion, posicionesDe } from '../lib/ejes'
-import { evaluarMedida, parejaDual, unidadPrincipal, condicionNeumatico, errorProfundidad, fugaLenta, presionActual, presionIdeal, profundidadMaxima, estadoPresion, estadoProfundidad, minimo, type CondicionNeumatico, type EstadoMedida } from '../lib/calculos'
+import { profundidadIlogica, evaluarMedida, parejaDual, unidadPrincipal, condicionNeumatico, errorProfundidad, fugaLenta, presionActual, presionIdeal, profundidadMaxima, estadoPresion, estadoProfundidad, minimo, type CondicionNeumatico, type EstadoMedida } from '../lib/calculos'
 import type { Activo, InspeccionNeumatico, Neumatico } from '../lib/tipos'
 import { InspeccionGrafica, PATRONES, type FilaInspeccion } from './inspeccionGrafica'
 import { LeyendaEstados, PlantaVehiculo, type Celda } from './planta'
@@ -67,6 +67,11 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
     )
   }, [datos, montados, tiene])
 
+  // Alarma: profundidad mayor que la anterior, hasta que una inspección la corrija
+  const ilogicas = [...montados.entries()]
+    .map(([p, n]) => ({ p, n, x: profundidadIlogica(n, datos) }))
+    .filter((y): y is { p: string; n: Neumatico; x: NonNullable<ReturnType<typeof profundidadIlogica>> } => y.x != null)
+
   if (!plantilla.ejes.length) {
     return <Vacio>Este activo no lleva neumáticos (cámbialo en “Datos” si no es así).</Vacio>
   }
@@ -78,7 +83,7 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
     const actual = m ? presionActual(m) : null
     const ep = m ? estadoPresion(actual, m.presion_ideal_psi) : 'sin_dato'
     const ed = m ? estadoProfundidad(m.profundidad_min_mm) : 'sin_dato'
-    const peor: EstadoMedida = [ep, ed].includes('critico') ? 'critico' : [ep, ed].includes('alerta') ? 'alerta' : m ? 'ok' : 'sin_dato'
+    const peor: EstadoMedida = ilogicas.some((y) => y.p === pos) || [ep, ed].includes('critico') ? 'critico' : [ep, ed].includes('alerta') ? 'alerta' : m ? 'ok' : 'sin_dato'
     // Se encontró fuera de rango y se corrigió en la inspección
     const corregida = m != null && actual !== m.presion_psi && estadoPresion(m.presion_psi, m.presion_ideal_psi) !== 'ok'
     return {
@@ -106,6 +111,17 @@ export function NeumaticosActivo({ activo }: { activo: Activo }) {
           <button className="primario" onClick={() => setInspeccionar(true)}>Inspección de presión y profundidad</button>
         )}
       </div>
+      {ilogicas.length > 0 && (
+        <div className="alarma-ilogica" role="alert">
+          <b>🚨 ALARMA · Profundidad ilógica</b>
+          {ilogicas.map(({ p, n, x }) => (
+            <span key={p}>
+              {nombrePosicion(p)} · {nombreNeumatico(n)}: la última medida ({x.mm} mm, {fecha(x.fecha)}) es mayor que la anterior ({x.anterior} mm, {fecha(x.fechaAnterior)}).
+            </span>
+          ))}
+          <span className="chico">Un neumático no recupera banda. Vuelve a medir en la próxima inspección; la alarma se quita sola cuando la medida sea coherente.</span>
+        </div>
+      )}
       {fugas.length > 0 && (
         <div className="aviso alerta chico" role="status">
           <b>Posible fuga lenta</b> (se encontraron bajos en sus 2 últimas inspecciones, aunque se corrigieron):{' '}

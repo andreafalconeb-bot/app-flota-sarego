@@ -9,7 +9,7 @@ import { FormNeumatico } from '../components/formularios'
 import { Pill, Vacio } from '../components/ui'
 import { TarjetaFacturas } from '../components/facturas'
 import { condiciones } from '../components/neumaticos'
-import { claseNeumatico, proyeccionNeumatico, resumenInventario, type FilaResumen } from '../lib/calculos'
+import { claseNeumatico, profundidadIlogica, proyeccionNeumatico, resumenInventario, type FilaResumen } from '../lib/calculos'
 import { dineroUnidad, textoProyeccion, un } from '../components/costoOperacion'
 import type { Neumatico } from '../lib/tipos'
 
@@ -95,6 +95,10 @@ export default function Neumaticos() {
                       {c.mm != null ? (
                         <>
                           <Pill tono={ep === 'critico' ? 'critico' : ep === 'alerta' ? 'alerta' : 'ok'}>{c.mm} mm</Pill>
+                          {(() => {
+                            const x = n.estado !== 'desecho' ? profundidadIlogica(n, e.datos) : null
+                            return x ? <div><Pill tono="critico">🚨 Ilógica: mayor que {x.anterior} mm</Pill></div> : null
+                          })()}
                           <div className="sec chico">
                             {c.origen === 'compra' ? 'de compra' : `${c.origen === 'inspeccion' ? 'inspección' : 'medida'} ${fecha(c.fecha!.slice(0, 10))}`}
                             {c.origen !== 'compra' && n.profundidad_inicial_mm ? ` · nuevo ${n.profundidad_inicial_mm} mm` : ''}
