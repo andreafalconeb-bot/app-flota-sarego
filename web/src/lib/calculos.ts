@@ -1304,3 +1304,18 @@ export function evaluarMedida(p: {
   }
   return { previa, tramo, antes, ahora, promedio, alertas }
 }
+
+/**
+ * Alarma de profundidad ilógica (Andrea, 28/nov/2026): la última medida
+ * del neumático es mayor que la anterior de la misma banda. Un neumático
+ * no recupera banda; queda en alarma hasta que una inspección nueva dé
+ * un valor coherente. La banda renovada empieza de nuevo y no cuenta.
+ */
+export function profundidadIlogica(n: { id: string }, d: Pick<Datos, 'movimientos' | 'inspecciones' | 'inspeccionNeumaticos'>): { mm: number; anterior: number; fecha: string; fechaAnterior: string; activoId: string | null } | null {
+  const h = historialBanda(n, d)
+  if (h.length < 2) return null
+  const ultima = h[h.length - 1]
+  const anterior = h[h.length - 2]
+  if (ultima.renovacion || ultima.mm <= anterior.mm) return null
+  return { mm: ultima.mm, anterior: anterior.mm, fecha: ultima.fecha, fechaAnterior: anterior.fecha, activoId: ultima.activoId }
+}

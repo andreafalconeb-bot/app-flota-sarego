@@ -6,7 +6,7 @@
 // crítico) y el perfil de la banda (3 ranuras contra la profundidad de
 // nuevo, con las líneas de 5 mm y 3 mm). Cada estado lleva su texto; el
 // color nunca va solo.
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { nombrePosicion } from '../lib/ejes'
 import { PlantaVehiculo } from './planta'
 import { VALVULAS } from '../lib/catalogos'
@@ -356,8 +356,15 @@ function DatosBanda({ ev, nuevo, unidad, desgaste, onDesgaste }: {
   desgaste: string
   onDesgaste: (v: string) => void
 }) {
+  const ilogica = ev?.alertas.find((a) => a.tipo === 'sube') ?? null
+  // Alarma: la tablet vibra cuando la profundidad sale mayor que la anterior
+  useEffect(() => {
+    if (ilogica) navigator.vibrate?.([200, 100, 200])
+  }, [!!ilogica]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!ev) return null
-  const pr = ev.ahora ?? ev.antes
+  // Con una medida ilógica la proyección no sirve: se muestra la de antes
+  const pr = ilogica ? ev.antes : ev.ahora ?? ev.antes
+  const otras = ev.alertas.filter((a) => a.tipo !== 'sube')
   const marcados = desgaste ? desgaste.split(',') : []
   const alternar = (k: string) => {
     const nuevos = marcados.includes(k) ? marcados.filter((x) => x !== k) : [...marcados.filter((x) => (k === 'confirmada' ? false : x !== 'confirmada')), k]
@@ -378,7 +385,7 @@ function DatosBanda({ ev, nuevo, unidad, desgaste, onDesgaste }: {
           {ev.tramo && <span className="sec chico">{numero(ev.tramo.uso)} {unidad} · {numero(ev.tramo.mm, 1)} mm</span>}
         </div>
         <div>
-          <span className="sec chico">Proyección {ev.ahora ? 'con esta medida' : ''}</span>
+          <span className="sec chico">Proyección {ilogica ? '(sin esta medida: es ilógica)' : ev.ahora ? 'con esta medida' : ''}</span>
           <b className="mono">{pr ? `${numero(pr.porMm)} ${unidad}/mm` : '—'}</b>
           <span className="sec chico">
             {pr
@@ -388,12 +395,21 @@ function DatosBanda({ ev, nuevo, unidad, desgaste, onDesgaste }: {
           {ev.promedio && <span className="sec chico">promedio {ev.promedio.deMedida ? 'de la medida' : 'de la flota'}: {numero(ev.promedio.porMm)} {unidad}/mm</span>}
         </div>
       </div>
+      {ilogica && (
+        <div className="alarma-ilogica" role="alert">
+          <b>🚨 ALARMA · Profundidad ilógica</b>
+          <span>{ilogica.texto}</span>
+          <span className="chico">Corrige las ranuras si mediste mal. Si al medir de nuevo da lo mismo, confírmala abajo: queda en alarma para que la revise el ingeniero.</span>
+        </div>
+      )}
       {ev.alertas.length > 0 && (
         <div className={'aviso pila ' + (marcados.length ? 'alerta' : 'error')} role="alert" style={{ gap: 6 }}>
           <b>🔍 Revisa este neumático ahora, con el vehículo al frente</b>
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {ev.alertas.map((a) => <li key={a.tipo}>{a.texto}</li>)}
-          </ul>
+          {otras.length > 0 && (
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {otras.map((a) => <li key={a.tipo}>{a.texto}</li>)}
+            </ul>
+          )}
           <span className="chico">
             Vuelve a medir las 3 ranuras. Pasa la mano por la banda de adentro hacia afuera y al revés: si se siente un filo en un solo sentido son plumas
             (arrastre lateral por desalineación). Mira los dos hombros y el centro. Marca lo que encontraste:
@@ -401,7 +417,7 @@ function DatosBanda({ ev, nuevo, unidad, desgaste, onDesgaste }: {
           <div className="fila" role="group" aria-label="Lo que encontraste">
             {Object.entries(PATRONES).map(([k, v]) => (
               <button key={k} type="button" className={'chico' + (marcados.includes(k) ? ' primario' : '')} aria-pressed={marcados.includes(k)} onClick={() => alternar(k)}>
-                {v.t}
+                {k === 'confirmada' && ilogica ? 'Medí de nuevo: confirmo la medida' : v.t}
               </button>
             ))}
           </div>
