@@ -10,8 +10,8 @@ import { useMemo, useRef, useState } from 'react'
 import { nombrePosicion } from '../lib/ejes'
 import { PlantaVehiculo } from './planta'
 import { VALVULAS } from '../lib/catalogos'
-import { desviacionPresion, errorProfundidad, estadoPresion, estadoProfundidad, minimo, type EstadoMedida } from '../lib/calculos'
-import { nombreNeumatico } from '../lib/formato'
+import { REMANENTE_MM, desviacionPresion, errorProfundidad, estadoPresion, estadoProfundidad, minimo, type EstadoMedida, type EvaluacionMedida } from '../lib/calculos'
+import { fecha, nombreNeumatico, numero } from '../lib/formato'
 import type { Activo, Neumatico } from '../lib/tipos'
 import { num } from './ui'
 
@@ -25,6 +25,26 @@ export interface FilaInspeccion {
   p3: string
   valvula: string
   observacion: string
+  /** Lo que se encontró al revisar la banda (claves de PATRONES, separadas por coma) */
+  desgaste: string
+}
+
+/**
+ * Lo que se puede encontrar al revisar la banda con el vehículo al frente,
+ * con su causa más común (Michelin, Continental: guías de desgaste
+ * irregular de camión).
+ */
+export const PATRONES: Record<string, { t: string; causa: string }> = {
+  confirmada: { t: 'Medí de nuevo: está bien', causa: 'Desgaste parejo; la medida se confirmó.' },
+  plumas: { t: 'Arrastre lateral (plumas)', causa: 'Convergencia fuera de medida o eje trasero desalineado: el caucho rueda arrastrándose de lado. Puede gastarse parejo pero rápido. Alinear.' },
+  hombro_ext: { t: 'Hombro externo', causa: 'Caída (camber) o convergencia, o curvas a mucha velocidad. Revisar alineación.' },
+  hombro_int: { t: 'Hombro interno', causa: 'Caída (camber) negativa, divergencia, rótulas o bujes gastados. Revisar alineación y tren delantero.' },
+  ambos_hombros: { t: 'Ambos hombros', causa: 'Baja presión o sobrecarga.' },
+  centro: { t: 'Centro', causa: 'Sobrepresión para la carga que lleva.' },
+  copas: { t: 'Copas o escalones', causa: 'Amortiguadores, rodamientos o terminales gastados, o rueda desbalanceada.' },
+  diagonal: { t: 'Diagonal', causa: 'Ejes traseros desalineados (paralelismo) o duales de distinto diámetro.' },
+  plano: { t: 'Zona plana', causa: 'Frenada con rueda bloqueada o freno pegado.' },
+  dano: { t: 'Cortes, bultos o impactos', causa: 'Daño de carcasa: revisar si se puede reparar o renovar.' },
 }
 
 const COLOR: Record<EstadoMedida, string> = {
@@ -169,8 +189,10 @@ function PerfilBanda({ ranuras, nuevo }: { ranuras: (number | null)[]; nuevo: nu
 }
 
 /** Planta + detalle del neumático elegido con manómetro y perfil de banda. */
-export function InspeccionGrafica({ activo, montados, posiciones, filas, set, maxima, origenIdeal }: {
+export function InspeccionGrafica({ activo, montados, posiciones, filas, set, maxima, origenIdeal, evaluar }: {
   maxima: (n: Neumatico) => number | null
+  /** Evaluación de la profundidad anotada: historial, proyección y alertas */
+  evaluar?: (pos: string) => EvaluacionMedida | null
   /** De dónde sale la presión ideal de esa posición */
   origenIdeal?: (pos: string) => 'activo' | 'fabricante' | null
   activo: Activo
@@ -196,8 +218,9 @@ export function InspeccionGrafica({ activo, montados, posiciones, filas, set, ma
       medidas: ms.filter((m) => m.presion != null || m.mm != null).length,
       criticas: ms.filter((m) => m.estado === 'critico').length,
       alertas: ms.filter((m) => m.estado === 'alerta').length,
+      porRevisar: posiciones.filter((p) => (evaluar?.(p)?.alertas.length ?? 0) > 0 && !filas[p].desgaste).length,
     }
-  }, [posiciones, filas, montados])
+  }, [posiciones, filas, montados, evaluar])
 
   if (!n) return null
   const f = filas[elegida]
@@ -209,6 +232,7 @@ export function InspeccionGrafica({ activo, montados, posiciones, filas, set, ma
         <span><b>{resumen.medidas}</b> de {posiciones.length} medidos</span>
         {resumen.criticas > 0 && <span className="pill critico">⚠ {resumen.criticas} críticos</span>}
         {resumen.alertas > 0 && <span className="pill alerta">● {resumen.alertas} por revisar</span>}
+        {resumen.porRevisar > 0 && <span className="pill critico">🔍 {resumen.porRevisar} con desgaste por chequear</span>}
         <span className="sec">Toca un neumático en la planta para medirlo.</span>
       </div>
       <div className="insp-grid">
@@ -221,8 +245,9 @@ export function InspeccionGrafica({ activo, montados, posiciones, filas, set, ma
             const nn = montados.get(p)
             if (!nn) return { estado: null, ayuda: `${nombrePosicion(p)}: sin neumático` }
             const mm = medida(filas[p], nn)
+            const conAlerta = (evaluar?.(p)?.alertas.length ?? 0) > 0
             return {
-              estado: mm.estado,
+              estado: conAlerta && mm.estado !== 'critico' ? 'critico' : mm.estado,
               titulo: mm.presion != null ? (num(filas[p].dejada) != null && num(filas[p].dejada) !== mm.presion ? `${mm.presion}→${filas[p].dejada}` : `${mm.presion} psi`) : '— psi',
               detalle: mm.mm != null ? `${mm.mm} mm` : <span className="sec">— mm</span>,
               ayuda: `${nombrePosicion(p)} · ${nombreNeumatico(nn)}`,
@@ -299,6 +324,7 @@ export function InspeccionGrafica({ activo, montados, posiciones, filas, set, ma
               )}
             </div>
           </div>
+          {evaluar && <DatosBanda ev={evaluar(elegida)} nuevo={maxima(n)} unidad={activo.medidor === 'horas' ? 'h' : 'km'} desgaste={f.desgaste} onDesgaste={(v) => set(elegida, 'desgaste', v)} />}
           <div className="fila" role="group" aria-label="Válvula">
             <span className="chico sec">Válvula:</span>
             {Object.entries(VALVULAS).map(([k, v]) => (
@@ -314,6 +340,76 @@ export function InspeccionGrafica({ activo, montados, posiciones, filas, set, ma
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Profundidad de nuevo y de la última inspección, rendimiento y
+ * proyección con la medida que se está anotando, y las alertas que piden
+ * revisar el neumático en el momento.
+ */
+function DatosBanda({ ev, nuevo, unidad, desgaste, onDesgaste }: {
+  ev: EvaluacionMedida | null
+  nuevo: number | null
+  unidad: string
+  desgaste: string
+  onDesgaste: (v: string) => void
+}) {
+  if (!ev) return null
+  const pr = ev.ahora ?? ev.antes
+  const marcados = desgaste ? desgaste.split(',') : []
+  const alternar = (k: string) => {
+    const nuevos = marcados.includes(k) ? marcados.filter((x) => x !== k) : [...marcados.filter((x) => (k === 'confirmada' ? false : x !== 'confirmada')), k]
+    onDesgaste(nuevos.join(','))
+  }
+  return (
+    <div className="pila" style={{ gap: 8 }}>
+      <div className="banda-datos">
+        <div><span className="sec chico">Nuevo</span><b className="mono">{nuevo != null ? `${numero(nuevo, 1)} mm` : '—'}</b></div>
+        <div>
+          <span className="sec chico">Última inspección</span>
+          <b className="mono">{ev.previa ? `${numero(ev.previa.mm, 1)} mm` : '—'}</b>
+          {ev.previa && <span className="sec chico">{fecha(ev.previa.fecha)}{ev.previa.lectura != null ? ` · ${numero(ev.previa.lectura)} ${unidad}` : ''}</span>}
+        </div>
+        <div>
+          <span className="sec chico">Este tramo</span>
+          <b className="mono">{ev.tramo ? (ev.tramo.porMm != null ? `${numero(ev.tramo.porMm)} ${unidad}/mm` : 'sin desgaste') : '—'}</b>
+          {ev.tramo && <span className="sec chico">{numero(ev.tramo.uso)} {unidad} · {numero(ev.tramo.mm, 1)} mm</span>}
+        </div>
+        <div>
+          <span className="sec chico">Proyección {ev.ahora ? 'con esta medida' : ''}</span>
+          <b className="mono">{pr ? `${numero(pr.porMm)} ${unidad}/mm` : '—'}</b>
+          <span className="sec chico">
+            {pr
+              ? `${pr.vidaTotal != null ? `vida ${numero(pr.vidaTotal)} ${unidad} · ` : ''}le quedan ~${numero(pr.restante)} ${unidad} a ${numero(REMANENTE_MM, 1)} mm${pr.preliminar ? ' · preliminar' : ''}`
+              : 'falta desgaste medido'}
+          </span>
+          {ev.promedio && <span className="sec chico">promedio {ev.promedio.deMedida ? 'de la medida' : 'de la flota'}: {numero(ev.promedio.porMm)} {unidad}/mm</span>}
+        </div>
+      </div>
+      {ev.alertas.length > 0 && (
+        <div className={'aviso pila ' + (marcados.length ? 'alerta' : 'error')} role="alert" style={{ gap: 6 }}>
+          <b>🔍 Revisa este neumático ahora, con el vehículo al frente</b>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {ev.alertas.map((a) => <li key={a.tipo}>{a.texto}</li>)}
+          </ul>
+          <span className="chico">
+            Vuelve a medir las 3 ranuras. Pasa la mano por la banda de adentro hacia afuera y al revés: si se siente un filo en un solo sentido son plumas
+            (arrastre lateral por desalineación). Mira los dos hombros y el centro. Marca lo que encontraste:
+          </span>
+          <div className="fila" role="group" aria-label="Lo que encontraste">
+            {Object.entries(PATRONES).map(([k, v]) => (
+              <button key={k} type="button" className={'chico' + (marcados.includes(k) ? ' primario' : '')} aria-pressed={marcados.includes(k)} onClick={() => alternar(k)}>
+                {v.t}
+              </button>
+            ))}
+          </div>
+          {marcados.filter((k) => k !== 'confirmada').map((k) => (
+            <span key={k} className="chico"><b>{PATRONES[k]?.t}:</b> {PATRONES[k]?.causa}</span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

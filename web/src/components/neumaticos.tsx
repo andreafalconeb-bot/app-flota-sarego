@@ -1,12 +1,12 @@
 // Neumáticos de un activo: diagrama de ejes, montaje / desmontaje /
 // rotación e inspección de presión y profundidad (fase 1, básico).
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useEmpresa } from '../lib/empresa'
 import { hoyISO, fecha, nombreNeumatico, serialNeumatico } from '../lib/formato'
 import { PLANTILLAS, ejeDe, nombrePosicion, posicionesDe } from '../lib/ejes'
-import { condicionNeumatico, errorProfundidad, fugaLenta, presionActual, presionIdeal, profundidadMaxima, estadoPresion, estadoProfundidad, minimo, type CondicionNeumatico, type EstadoMedida } from '../lib/calculos'
+import { evaluarMedida, parejaDual, unidadPrincipal, condicionNeumatico, errorProfundidad, fugaLenta, presionActual, presionIdeal, profundidadMaxima, estadoPresion, estadoProfundidad, minimo, type CondicionNeumatico, type EstadoMedida } from '../lib/calculos'
 import type { Activo, InspeccionNeumatico, Neumatico } from '../lib/tipos'
-import { InspeccionGrafica, type FilaInspeccion } from './inspeccionGrafica'
+import { InspeccionGrafica, PATRONES, type FilaInspeccion } from './inspeccionGrafica'
 import { LeyendaEstados, PlantaVehiculo, type Celda } from './planta'
 import { ResumenPresiones } from './presiones'
 import { PerdidaPresionActivo, ProyeccionNeumaticos } from './costoOperacion'
@@ -411,7 +411,7 @@ function Posicion({ activo, posicion, montado, onCerrar }: { activo: Activo; pos
 
 
 function Inspeccion({ activo, montados: montadosReales, onCerrar }: { activo: Activo; montados: Map<string, Neumatico>; onCerrar: () => void }) {
-  const { guardar, datos } = useEmpresa()
+  const { guardar, datos, parchar } = useEmpresa()
   // La presión ideal es la calculada para este activo, por eje; si no
   // está definida, la del neumático (fabricante)
   const ideales = useMemo(
@@ -424,10 +424,40 @@ function Inspeccion({ activo, montados: montadosReales, onCerrar }: { activo: Ac
   )
   const posiciones = posicionesDe(activo.configuracion).filter((p) => montados.has(p))
   const [filas, setFilas] = useState<Record<string, FilaInspeccion>>(() =>
-    Object.fromEntries(posiciones.map((p) => [p, { presion: '', dejada: '', p1: '', p2: '', p3: '', valvula: 'ok', observacion: '' }])),
+    Object.fromEntries(posiciones.map((p) => [p, { presion: '', dejada: '', p1: '', p2: '', p3: '', valvula: 'ok', observacion: '', desgaste: '' }])),
   )
-  const [km, setKm] = useState(activo.km_actual != null ? String(activo.km_actual) : '')
-  const [horas, setHoras] = useState(activo.horas_actual != null ? String(activo.horas_actual) : '')
+  // Primero la lectura del activo (obligatoria): sin ella no hay km por mm
+  // ni proyección. Arranca vacía para que se lea el tablero, no se copie.
+  const [paso, setPaso] = useState<'lectura' | 'medir'>('lectura')
+  const [km, setKm] = useState('')
+  const [horas, setHoras] = useState('')
+  const u = unidadPrincipal(activo.medidor)
+  const actual = u === 'km' ? activo.km_actual : activo.horas_actual
+  const lecturaNueva = num(u === 'km' ? km : horas)
+  const errorLectura =
+    lecturaNueva == null
+      ? `Anota ${u === 'km' ? 'el odómetro' : 'el horómetro'} antes de medir.`
+      : actual != null && lecturaNueva < actual
+        ? `Es menor que la última lectura (${actual.toLocaleString('es-VE')} ${u === 'km' ? 'km' : 'h'}). Revisa el tablero.`
+        : null
+  const evaluar = useCallback(
+    (p: string) => {
+      const n = montadosReales.get(p)
+      if (!n) return null
+      const f = filas[p]
+      const par = parejaDual(p)
+      const fp = par ? filas[par] : null
+      return evaluarMedida({
+        n,
+        activo,
+        d: datos,
+        lectura: lecturaNueva,
+        ranuras: [num(f.p1), num(f.p2), num(f.p3)],
+        mmPareja: fp ? minimo([num(fp.p1), num(fp.p2), num(fp.p3)]) : null,
+      })
+    },
+    [montadosReales, filas, activo, datos, lecturaNueva],
+  )
   const [notas, setNotas] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
@@ -439,13 +469,26 @@ function Inspeccion({ activo, montados: montadosReales, onCerrar }: { activo: Ac
     try {
       const conDatos = posiciones.filter((p) => filas[p].presion || filas[p].p1 || filas[p].p2 || filas[p].p3)
       if (!conDatos.length) throw new Error('Anota al menos una presión o profundidad.')
+      if (errorLectura) throw new Error(errorLectura)
       for (const p of conDatos) {
         const e = errorProfundidad([num(filas[p].p1), num(filas[p].p2), num(filas[p].p3)], profundidadMaxima(montados.get(p)!, datos.movimientos))
         if (e) throw new Error(`${nombrePosicion(p)}: ${e}`)
       }
+      // Con alerta hay que revisar el neumático y marcar lo que se encontró
+      const sinRevisar = conDatos.filter((p) => (evaluar(p)?.alertas.length ?? 0) > 0 && !filas[p].desgaste)
+      if (sinRevisar.length) throw new Error(`Revisa y marca lo que encontraste en: ${sinRevisar.map(nombrePosicion).join(', ')}.`)
+      const fechaInsp = new Date().toISOString()
+      if (actual == null || lecturaNueva! > actual) {
+        await guardar('lecturas', { activo_id: activo.id, fecha: fechaInsp, km: num(km), horas: num(horas), notas: 'Inspección de neumáticos' })
+        await parchar('activos', activo.id, {
+          km_actual: Math.max(activo.km_actual ?? 0, num(km) ?? 0) || activo.km_actual,
+          horas_actual: Math.max(activo.horas_actual ?? 0, num(horas) ?? 0) || activo.horas_actual,
+          lectura_at: fechaInsp,
+        })
+      }
       const inspeccionId = await guardar('inspecciones', {
         activo_id: activo.id,
-        fecha: new Date().toISOString(),
+        fecha: fechaInsp,
         km: num(km),
         horas: num(horas),
         notas: notas.trim() || null,
@@ -464,7 +507,8 @@ function Inspeccion({ activo, montados: montadosReales, onCerrar }: { activo: Ac
           profundidades_mm: profundidades.length ? profundidades : null,
           profundidad_min_mm: minimo(profundidades),
           valvula: f.valvula as InspeccionNeumatico['valvula'],
-          observacion: f.observacion.trim() || null,
+          observacion:
+            [f.desgaste ? `Revisado: ${f.desgaste.split(',').map((k) => PATRONES[k]?.t ?? k).join(', ')}` : null, f.observacion.trim() || null].filter(Boolean).join('. ') || null,
         })
       }
       onCerrar()
@@ -482,19 +526,49 @@ function Inspeccion({ activo, montados: montadosReales, onCerrar }: { activo: Ac
       ancho="grande"
       onCerrar={onCerrar}
       pie={
-        <>
-          <button onClick={onCerrar}>Cancelar</button>
-          <button className="primario" disabled={enviando} onClick={() => void guardarTodo()}>{enviando ? 'Guardando…' : 'Guardar inspección'}</button>
-        </>
+        paso === 'lectura' ? (
+          <>
+            <button onClick={onCerrar}>Cancelar</button>
+            <button className="primario" disabled={!!errorLectura} onClick={() => setPaso('medir')}>Empezar la inspección →</button>
+          </>
+        ) : (
+          <>
+            <button onClick={() => setPaso('lectura')}>← Lectura</button>
+            <button className="primario" disabled={enviando} onClick={() => void guardarTodo()}>{enviando ? 'Guardando…' : 'Guardar inspección'}</button>
+          </>
+        )
       }
     >
-      <div className="grid grid-2">
-        {activo.medidor !== 'horas' && (
-          <Campo etiqueta="Odómetro (km)"><input inputMode="decimal" value={km} onChange={(e) => setKm(e.target.value)} /></Campo>
-        )}
-        {activo.medidor !== 'km' && (
-          <Campo etiqueta="Horómetro (h)"><input inputMode="decimal" value={horas} onChange={(e) => setHoras(e.target.value)} /></Campo>
-        )}
+      {paso === 'lectura' ? (
+        <div className="inspeccion-antes">
+          <div className="tarjeta pila" style={{ margin: 0 }}>
+            <b>Antes de empezar</b>
+            <ol className="chico">
+              <li><b>Hazla con la tablet o el teléfono, parado frente al vehículo.</b> Si salta una alerta, revisas ese neumático en el momento: no hay que volver.</li>
+              <li>Presión en frío: antes de rodar o con 3 horas parado. Manómetro calibrado.</li>
+              <li>Mide 3 ranuras principales (exterior, centro e interior), lejos de los testigos de desgaste y sin piedras.</li>
+              <li>Pasa la mano por la banda de adentro hacia afuera y al revés: un filo en un solo sentido (plumas) es arrastre lateral por desalineación, aunque el desgaste se vea parejo.</li>
+            </ol>
+          </div>
+          <div className="grid grid-2">
+            {activo.medidor !== 'horas' && (
+              <Campo etiqueta="Odómetro de hoy (km) · obligatorio"><input className="entrada-grande" inputMode="decimal" autoFocus={u === 'km'} value={km} onChange={(e) => setKm(e.target.value)} /></Campo>
+            )}
+            {activo.medidor !== 'km' && (
+              <Campo etiqueta={`Horómetro de hoy (h)${u === 'horas' ? ' · obligatorio' : ''}`}><input className="entrada-grande" inputMode="decimal" autoFocus={u === 'horas'} value={horas} onChange={(e) => setHoras(e.target.value)} /></Campo>
+            )}
+          </div>
+          <span className="sec chico">
+            {actual != null ? `Última lectura: ${actual.toLocaleString('es-VE')} ${u === 'km' ? 'km' : 'h'}${activo.lectura_at ? ` (${fecha(activo.lectura_at.slice(0, 10))})` : ''}` : 'Sin lecturas anteriores.'}
+            {lecturaNueva != null && actual != null && lecturaNueva >= actual && ` · +${(lecturaNueva - actual).toLocaleString('es-VE')} ${u === 'km' ? 'km' : 'h'} desde entonces`}
+            . Con esta lectura se calcula cuánto rindió cada neumático por mm y su proyección.
+          </span>
+          {(km || horas) && errorLectura && <div className="aviso error chico">{errorLectura}</div>}
+        </div>
+      ) : (
+        <>
+      <div className="fila chico">
+        <span>{u === 'km' ? 'Odómetro' : 'Horómetro'}: <b>{lecturaNueva?.toLocaleString('es-VE')} {u === 'km' ? 'km' : 'h'}</b></span>
       </div>
       {[...ideales.values()].some((x) => x.origen !== 'activo') && (
         <div className="aviso alerta chico">
@@ -509,8 +583,11 @@ function Inspeccion({ activo, montados: montadosReales, onCerrar }: { activo: Ac
         set={set}
         maxima={(n) => profundidadMaxima(n, datos.movimientos)}
         origenIdeal={(p) => ideales.get(p)?.origen ?? null}
+        evaluar={evaluar}
       />
       <Campo etiqueta="Notas"><input value={notas} onChange={(e) => setNotas(e.target.value)} /></Campo>
+        </>
+      )}
       <ErrorMsg error={error} />
     </Modal>
   )

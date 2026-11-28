@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, presionIdeal, presionSugerida, kgPorIndice, datosCaucho, proximoCambio, tramosConsumo, estadoLectura, DIAS_LECTURA, costoOperacion, proyeccionNeumatico, perdidaPorPresion, vidaPorPresion } from './calculos'
+import { compararAditivo, costoPorUso, disponible, estadoBloqueo, estadoPresion, estadoProfundidad, gastoPorCuenta, marcasParaLote, condicionNeumatico, resumenInventario, claseNeumatico, profundidadMaxima, errorProfundidad, fugaLenta, presionActual, presionIdeal, presionSugerida, kgPorIndice, datosCaucho, proximoCambio, tramosConsumo, estadoLectura, DIAS_LECTURA, costoOperacion, proyeccionNeumatico, perdidaPorPresion, vidaPorPresion, evaluarMedida, parejaDual } from './calculos'
 import { aplicar } from './datos'
 import { datosVacios, type Activo, type Carga, type Compartimiento, type Costo, type InspeccionNeumatico, type Movimiento, type Neumatico, type Servicio } from './tipos'
 
@@ -430,6 +430,30 @@ describe('costo por km y proyección de neumáticos', () => {
     expect(r.tramos[1].dinero).toBeCloseTo(porKm * 10000 * (1 / 0.94 - 1), 6)
     expect(r.combustible).toBeCloseTo(0.01 * 10000 * 0.5 * 0.005, 6) // 5 % bajo en 10.000 km
     expect(r.total).toBeCloseTo(r.desgaste + r.combustible, 6)
+  })
+
+  it('evalúa la medida en la inspección y avisa', () => {
+    const d = base()
+    const ev = (ranuras: (number | null)[], lectura = 124000, mmPareja?: number) =>
+      evaluarMedida({ n: d.neumaticos[0], activo: d.activos[0], d, lectura, ranuras, mmPareja, hoy: '2026-11-27' })
+    const normal = ev([10, 10, 10.5])
+    expect(normal.previa).toMatchObject({ mm: 11, lectura: 120000 })
+    expect(normal.tramo).toMatchObject({ uso: 4000, mm: 1, porMm: 4000 })
+    expect(normal.ahora!.porMm).toBe(4000) // 24.000 km / 6 mm
+    expect(normal.alertas).toEqual([])
+    expect(ev([8, 8, 8]).alertas.map((a) => a.tipo)).toEqual(['acelerado']) // 4.000 km en 3 mm
+    expect(ev([12, 12, 12]).alertas.map((a) => a.tipo)).toContain('sube')
+    expect(ev([11.2, 11.2, 11.2]).alertas.map((a) => a.tipo)).toEqual(['sube']) // cualquier valor mayor que 11 mm
+    expect(ev([11, 11, 11]).alertas).toEqual([])
+    expect(ev([11, 9, 10]).alertas.map((a) => a.tipo)).toContain('irregular')
+    expect(ev([10, 10, 10], 124000, 6).alertas.map((a) => a.tipo)).toEqual(['duales'])
+    expect(ev([1.5]).alertas.map((a) => a.tipo)).toContain('remanente')
+  })
+
+  it('pareja dual', () => {
+    expect(parejaDual('2IE')).toBe('2II')
+    expect(parejaDual('3DE')).toBe('3DI')
+    expect(parejaDual('1I')).toBeNull()
   })
 
   it('sin recorrido en el periodo no hay costo por km', () => {
