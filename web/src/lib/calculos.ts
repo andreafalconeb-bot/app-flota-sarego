@@ -1179,3 +1179,128 @@ export function perdidaPorPresion(d: Datos, desde: string | null, hasta: string)
   }
   return resultado
 }
+
+// ------------------------------------------------------------
+// Evaluación de la medición en la inspección
+// ------------------------------------------------------------
+/** Rendimiento (km/mm) por debajo de este % del promedio o de su propio historial: revisar. */
+export const RENDIMIENTO_MINIMO = 0.75
+/** Diferencia entre ranuras de un mismo neumático que ya es desgaste irregular (mm). */
+export const DIFERENCIA_RANURAS_MM = 2
+/** Diferencia máxima de profundidad entre duales (mm). */
+export const DIFERENCIA_DUALES_MM = 3
+
+export type TipoAlertaMedida = 'sube' | 'acelerado' | 'bajo_promedio' | 'irregular' | 'duales' | 'remanente'
+
+export interface AlertaMedida {
+  tipo: TipoAlertaMedida
+  texto: string
+}
+
+export interface EvaluacionMedida {
+  /** Última profundidad conocida antes de esta inspección */
+  previa: { mm: number; fecha: string; lectura: number | null } | null
+  /** Rendimiento de este tramo (desde la medición anterior del mismo montaje) */
+  tramo: { uso: number; mm: number; porMm: number | null } | null
+  antes: ProyeccionNeumatico | null
+  /** Proyección contando esta medición */
+  ahora: ProyeccionNeumatico | null
+  /** Rendimiento promedio de la flota (misma medida si hay, si no todas) */
+  promedio: { porMm: number; neumaticos: number; deMedida: boolean } | null
+  alertas: AlertaMedida[]
+}
+
+/** Pareja dual de una posición ("2IE" ↔ "2II", "2DI" ↔ "2DE"); null si es sencilla. */
+/** Número con hasta 1 decimal, con coma. */
+const mm1 = (v: number) => (Math.round(v * 10) / 10).toLocaleString('es-VE')
+
+export function parejaDual(pos: string): string | null {
+  const m = /^(\d+)(IE|II|DI|DE)$/.exec(pos)
+  if (!m) return null
+  const otra: Record<string, string> = { IE: 'II', II: 'IE', DI: 'DE', DE: 'DI' }
+  return m[1] + otra[m[2]]
+}
+
+/**
+ * Evalúa la profundidad que se está anotando: la compara con la última,
+ * calcula la proyección con esta medida (regla de tres km/mm) y la
+ * compara con su propio historial y con el promedio de la flota. Las
+ * alertas piden revisar en el momento, con el vehículo al frente: volver
+ * a medir y mirar si hay desgaste irregular o arrastre lateral.
+ */
+export function evaluarMedida(p: {
+  n: Neumatico
+  activo: Activo
+  d: Datos
+  /** Lectura del activo en esta inspección (km u h) */
+  lectura: number | null
+  ranuras: (number | null)[]
+  /** Profundidad mínima del par dual en esta inspección */
+  mmPareja?: number | null
+  hoy?: string
+}): EvaluacionMedida {
+  const { n, activo, d } = p
+  const u = unidadPrincipal(activo.medidor)
+  const hoy = p.hoy ?? new Date().toISOString().slice(0, 10)
+  const valores = p.ranuras.filter((x): x is number => x != null && !isNaN(x))
+  const mm = valores.length ? Math.min(...valores) : null
+  const alertas: AlertaMedida[] = []
+  const h = historialBanda(n, d)
+  const ultima = h[h.length - 1]
+  const previa = ultima ? { mm: ultima.mm, fecha: ultima.fecha, lectura: lectura(ultima, u) } : null
+  const antes = proyeccionNeumatico(n, d, hoy).proyeccion
+
+  // Promedio de la flota (sin este neumático), con proyecciones firmes
+  const firmes = d.neumaticos
+    .filter((x) => x.id !== n.id)
+    .map((x) => ({ x, pr: proyeccionNeumatico(x, d, hoy).proyeccion }))
+    .filter((y): y is { x: Neumatico; pr: ProyeccionNeumatico } => y.pr != null && !y.pr.preliminar && y.pr.unidad === u)
+  const deMedida = firmes.filter((y) => n.medida && y.x.medida?.toUpperCase() === n.medida.toUpperCase())
+  const base = deMedida.length >= 2 ? deMedida : firmes.length >= 2 ? firmes : []
+  const promedio = base.length ? { porMm: base.reduce((t, y) => t + y.pr.porMm, 0) / base.length, neumaticos: base.length, deMedida: base === deMedida } : null
+
+  let tramo: EvaluacionMedida['tramo'] = null
+  let ahora: ProyeccionNeumatico | null = null
+  if (mm != null) {
+    if (valores.length >= 2 && Math.max(...valores) - mm >= DIFERENCIA_RANURAS_MM) {
+      alertas.push({ tipo: 'irregular', texto: `Las ranuras difieren ${mm1(Math.max(...valores) - mm)} mm: desgaste irregular. Mira si un hombro está más gastado o si hay arrastre lateral (plumas).` })
+    }
+    if (p.mmPareja != null && Math.abs(p.mmPareja - mm) > DIFERENCIA_DUALES_MM) {
+      alertas.push({ tipo: 'duales', texto: `Difiere ${mm1(Math.abs(p.mmPareja - mm))} mm de su pareja dual (máximo ${DIFERENCIA_DUALES_MM} mm): el más gastado arrastra y se gasta más rápido.` })
+    }
+    // Un neumático no recupera banda: cualquier valor mayor que la lectura
+    // anterior es ilógico y hay que chequearlo o confirmarlo (Andrea, 28/nov/2026)
+    if (previa && mm > previa.mm) {
+      alertas.push({ tipo: 'sube', texto: `Ilógico: ${mm1(mm)} mm es más que la lectura anterior (${mm1(previa.mm)} mm, ${previa.fecha.split('-').reverse().join('/')}) y un neumático no recupera banda. Chequea la medida (fuera de los testigos de desgaste, sin piedras, profundímetro en cero) o confírmala.` })
+    }
+    if (mm <= REMANENTE_MM) {
+      alertas.push({ tipo: 'remanente', texto: `Llegó al remanente de ${mm1(REMANENTE_MM)} mm: sustituirlo, o mandarlo a renovar si la carcasa está buena (sin cortes, bultos ni separaciones).` })
+    }
+    // Tramo desde la medición anterior del mismo montaje
+    if (ultima && !ultima.fin && ultima.activoId === activo.id && p.lectura != null) {
+      const la = lectura(ultima, u)
+      if (la != null && p.lectura >= la) {
+        const gasto = ultima.mm - mm
+        tramo = { uso: p.lectura - la, mm: gasto, porMm: gasto > 0 ? (p.lectura - la) / gasto : null }
+      }
+    }
+    // Proyección con esta medición: se agrega como una inspección más
+    if (p.lectura != null && n.estado === 'montado' && n.activo_id === activo.id) {
+      const idI = '__nueva__'
+      const d2: Datos = {
+        ...d,
+        inspecciones: [...d.inspecciones, { id: idI, empresa_id: n.empresa_id, activo_id: activo.id, fecha: hoy + 'T23:59:59Z', km: u === 'km' ? p.lectura : null, horas: u === 'horas' ? p.lectura : null, notas: null }],
+        inspeccionNeumaticos: [...d.inspeccionNeumaticos, { id: idI, empresa_id: n.empresa_id, inspeccion_id: idI, neumatico_id: n.id, posicion: n.posicion ?? '', presion_psi: null, presion_ideal_psi: null, profundidades_mm: valores, profundidad_min_mm: mm, valvula: null, observacion: null }],
+      }
+      ahora = proyeccionNeumatico(n, d2, hoy).proyeccion
+    }
+    const pct = (x: number) => Math.round((1 - x) * 100)
+    if (tramo?.porMm != null && tramo.mm >= 1 && antes && tramo.porMm < antes.porMm * RENDIMIENTO_MINIMO) {
+      alertas.push({ tipo: 'acelerado', texto: `En este tramo rindió ${Math.round(tramo.porMm).toLocaleString('es-VE')} ${u === 'km' ? 'km' : 'h'}/mm, ${pct(tramo.porMm / antes.porMm)} % menos que su historial: se aceleró el desgaste.` })
+    }
+    if (ahora && promedio && ahora.porMm < promedio.porMm * RENDIMIENTO_MINIMO) {
+      alertas.push({ tipo: 'bajo_promedio', texto: `Rinde ${Math.round(ahora.porMm).toLocaleString('es-VE')} ${u === 'km' ? 'km' : 'h'}/mm, ${pct(ahora.porMm / promedio.porMm)} % menos que el promedio de ${promedio.deMedida ? `la medida ${n.medida}` : 'la flota'} (${Math.round(promedio.porMm).toLocaleString('es-VE')}).` })
+    }
+  }
+  return { previa, tramo, antes, ahora, promedio, alertas }
+}
